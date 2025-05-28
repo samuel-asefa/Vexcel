@@ -1,6 +1,6 @@
-// src/App.js
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
+// import { jwtDecode } from 'jwt-decode'; // Not strictly needed if relying on Firebase Auth user object primarily
 import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2 } from 'lucide-react';
 
 // Firebase imports
@@ -19,7 +19,6 @@ console.log("[App.js] Value of 'db' imported from ./Firebase.js:", db);
 const App = () => {
   const [user, setUser] = useState(null); // Will store Firestore profile
   const [loading, setLoading] = useState(true); // For initial app load
-  const authStateResolvedRef = useRef(false); // Ref to track if auth state has been resolved
   const [actionLoading, setActionLoading] = useState(false); // For specific actions
   const [message, setMessage] = useState('');
   const [currentView, setCurrentView] = useState('login');
@@ -50,11 +49,10 @@ const App = () => {
   const [availableChallengeCategories, setAvailableChallengeCategories] = useState([]);
   const [selectedChallengeCategories, setSelectedChallengeCategories] = useState([]);
 
-  // Ensure this GOOGLE_CLIENT_ID matches the one configured in Firebase Auth > Google Sign In for your Web SDK
   const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
   const XP_PER_LEVEL = 500;
 
-  // Learning content
+  // Learning content (remains client-side, could be moved to Firestore)
   const learningModules = useMemo(() => [
     {
       id: 'intro-vex',
@@ -148,6 +146,7 @@ const App = () => {
       }
     },
   ], []);
+
   const sampleQuizzes = useMemo(() => ({
     'intro-knowledge-check': {
       title: 'V5 Fundamentals Quiz',
@@ -177,6 +176,7 @@ const App = () => {
       ]
     }
   }), []);
+
   const sampleGames = useMemo(() => ({
     'design-challenge-game': {
       title: 'Mini Design Challenge: Object Mover',
@@ -191,6 +191,7 @@ const App = () => {
       xp: 40,
     }
   }), []);
+
   const vexpertChallengeBank = useMemo(() => [
     { id: 'vcq1', category: 'Hardware', difficulty: 'Easy', question: 'What is the typical voltage of a VEX V5 Robot Battery?', options: ['7.4V', '9.6V', '12V', '5V'], correctAnswerIndex: 2, explanation: 'VEX V5 Robot Batteries are nominally 12V.' },
     { id: 'vcq2', category: 'Hardware', difficulty: 'Medium', question: 'Which sensor is best for accurately measuring the robot\'s turning angle?', options: ['Optical Sensor', 'Distance Sensor', 'Bumper Switch', 'Inertial Sensor (IMU)'], correctAnswerIndex: 3, explanation: 'The Inertial Sensor (IMU) is designed to measure heading and rotation precisely.' },
@@ -207,169 +208,158 @@ const App = () => {
 
   // --- Firebase Data Fetching Callbacks ---
   const fetchUserProfile = useCallback(async (firebaseUserId) => {
-    console.log("[App.js fetchUserProfile] Attempting for UID:", firebaseUserId);
-    if (!db) { console.error("[App.js fetchUserProfile] Firestore 'db' is not available!"); return null; }
+    console.log("Attempting to fetch user profile for Firebase UID:", firebaseUserId);
+    if (!db) {
+      console.error("[fetchUserProfile] Firestore 'db' instance is not available. Firebase might not be initialized correctly.");
+      return null;
+    }
     try {
       const userDocRef = doc(db, "users", firebaseUserId);
       const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
-        console.log("[App.js fetchUserProfile] Profile found for UID:", firebaseUserId, userSnap.data());
+        console.log("Profile found in Firestore for Firebase UID:", firebaseUserId, userSnap.data());
         return { id: userSnap.id, ...userSnap.data() };
       }
-      console.log("[App.js fetchUserProfile] No profile in Firestore for UID:", firebaseUserId);
+      console.log("No profile in Firestore for Firebase UID:", firebaseUserId);
       return null;
     } catch (error) {
-      console.error("[App.js fetchUserProfile] Error for UID:", firebaseUserId, error);
+      console.error("Error in fetchUserProfile for Firebase UID:", firebaseUserId, error);
       return null;
     }
-  }, []);
+  }, []); // `db` dependency removed as it's from module scope, assuming it's stable after init.
 
   const fetchUserProgress = useCallback(async (firebaseUserId) => {
-    console.log("[App.js fetchUserProgress] Attempting for UID:", firebaseUserId);
-    if (!db) { console.error("[App.js fetchUserProgress] Firestore 'db' is not available!"); return; }
+    console.log("Attempting to fetch user progress for Firebase UID:", firebaseUserId);
+    if (!db) {
+      console.error("[fetchUserProgress] Firestore 'db' instance is not available.");
+      return;
+    }
     try {
       const progressColRef = collection(db, `users/${firebaseUserId}/progress`);
       const progressSnap = await getDocs(progressColRef);
       const loadedProgress = {};
-      progressSnap.forEach((docSnap) => { loadedProgress[docSnap.id] = docSnap.data(); });
+      progressSnap.forEach((docSnap) => {
+        loadedProgress[docSnap.id] = docSnap.data();
+      });
       setUserProgress(loadedProgress);
-      console.log("[App.js fetchUserProgress] Progress fetched for UID:", firebaseUserId, loadedProgress);
+      console.log("User progress fetched for Firebase UID:", firebaseUserId, loadedProgress);
     } catch (error) {
-      console.error("[App.js fetchUserProgress] Error for UID:", firebaseUserId, error);
+      console.error("Error in fetchUserProgress for Firebase UID:", firebaseUserId, error);
     }
   }, []);
 
   const fetchUserTeam = useCallback(async (teamId) => {
-    console.log("[App.js fetchUserTeam] Attempting for team ID:", teamId);
-    if (!teamId) { setUserTeam(null); console.log("[App.js fetchUserTeam] No teamId provided."); return null; }
-    if (!db) { console.error("[App.js fetchUserTeam] Firestore 'db' is not available!"); return null; }
+    console.log("Attempting to fetch team with ID:", teamId);
+    if (!teamId) { setUserTeam(null); console.log("No teamId provided to fetchUserTeam."); return null; }
+    if (!db) { console.error("[fetchUserTeam] Firestore 'db' instance is not available."); return null; }
+    
     try {
       const teamDocRef = doc(db, "teams", teamId);
       const teamSnap = await getDoc(teamDocRef);
       if (teamSnap.exists()) {
         const teamData = { id: teamSnap.id, ...teamSnap.data() };
         setUserTeam(teamData);
-        console.log("[App.js fetchUserTeam] Team data fetched:", teamData);
+        console.log("Team data fetched:", teamData);
         return teamData;
       } else {
         setUserTeam(null);
-        console.warn("[App.js fetchUserTeam] Team document not found for ID:", teamId);
-        if (user && user.id) { // Check if user exists before trying to access user.id
-          console.log("[App.js fetchUserTeam] Clearing dangling teamId from user profile:", user.id);
+        console.warn("Team document not found for ID:", teamId);
+        if (user && user.id) {
+          console.log("Attempting to clear dangling teamId from user profile:", user.id);
           const userRef = doc(db, "users", user.id);
           await updateDoc(userRef, { teamId: null });
+          console.log("Dangling teamId cleared from user profile.");
         }
         return null;
       }
     } catch (error) {
-      console.error("[App.js fetchUserTeam] Error for team ID:", teamId, error);
+      console.error("Error in fetchUserTeam for team ID:", teamId, error);
       setUserTeam(null);
       return null;
     }
-  }, [user]); // user is a dependency here
+  }, [user]);
 
 
-  // --- Auth State Listener ---
+  // --- Auth State Listener (Primary source of truth for auth state) ---
   useEffect(() => {
-    console.log("App.js: Auth listener useEffect mounting/re-running.");
-    authStateResolvedRef.current = false; 
-
-    const timeoutDuration = 20000; // 20 seconds
-    const timeoutId = setTimeout(() => {
-        if (!authStateResolvedRef.current) { 
-            console.error(`App.js: Firebase auth state check timed out after ${timeoutDuration/1000} seconds.`);
-            setLoading(false);
-            setMessage(
-                "CRITICAL: Vexcel platform is taking too long to initialize. This might be due to network issues or Firebase configuration problems. " +
-                "Please VERY CAREFULLY check your browser's developer console (F12 key) for any error messages, " +
-                "especially related to Firebase. Then, meticulously verify your Firebase setup in Firebase.js " +
-                "against your Firebase project console, and ensure Authentication service (with Google provider) is enabled."
-            );
-            setCurrentView('login'); 
-            setUser(null); 
-        }
-    }, timeoutDuration);
-
+    console.log("App.js: Auth listener effect is running.");
     if (!auth) {
-        console.error("App.js: Firebase 'auth' service is not initialized (imported as null). App cannot function.");
-        authStateResolvedRef.current = true; 
-        clearTimeout(timeoutId);
-        setLoading(false);
-        setMessage("CRITICAL: Firebase Authentication module not loaded. Check Firebase.js initialization and console for errors.");
-        setCurrentView('login');
-        return;
+      console.error("App.js: Firebase 'auth' service is not available in onAuthStateChanged. Firebase might not be initialized correctly in Firebase.js or imported incorrectly.");
+      setLoading(false); // Stop loading, but app will likely be broken.
+      setMessage("Critical Firebase Error: Auth service not loaded. Please check console and Firebase.js configuration.");
+      return; // Exit if auth is not available
     }
 
-    console.log("[App.js] Firebase 'auth' service IS available. Setting up onAuthStateChanged listener.");
     const unsubscribe = onAuthStateChanged(auth, async (firebaseAuthUser) => {
-        console.log("[App.js] onAuthStateChanged FIRED. User UID:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
-        authStateResolvedRef.current = true;
-        clearTimeout(timeoutId);
+      console.log("App.js: onAuthStateChanged triggered. Firebase Auth User:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
+      try {
+        if (firebaseAuthUser) {
+          console.log("App.js: Firebase Auth User signed in. UID:", firebaseAuthUser.uid);
+          let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
 
-        try {
-            if (firebaseAuthUser) {
-                console.log("App.js: User IS signed in (firebaseAuthUser exists). UID:", firebaseAuthUser.uid);
-                setActionLoading(true);
-                let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
-
-                if (!userProfile) {
-                    console.log("App.js: No Firestore profile for UID:", firebaseAuthUser.uid, ". Creating new one.");
-                    const newUserProfileData = {
-                        id: firebaseAuthUser.uid, name: firebaseAuthUser.displayName || `User${Math.floor(Math.random() * 10000)}`,
-                        email: firebaseAuthUser.email,
-                        avatar: firebaseAuthUser.photoURL || `https://source.boringavatars.com/beam/120/${firebaseAuthUser.email || firebaseAuthUser.uid}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`,
-                        xp: 0, level: 1, streak: 0, teamId: null,
-                        createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
-                    };
-                    if (!db) { console.error("App.js: Firestore 'db' is null while trying to create profile!"); throw new Error("Firestore not available for profile creation."); }
-                    await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
-                    userProfile = newUserProfileData;
-                    console.log("App.js: New Firestore profile CREATED for UID:", firebaseAuthUser.uid);
-                } else {
-                    console.log("App.js: Existing Firestore profile FOUND for UID:", firebaseAuthUser.uid, ". Updating lastLogin etc.");
-                    const profileUpdates = { lastLogin: serverTimestamp() };
-                    if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) profileUpdates.name = firebaseAuthUser.displayName;
-                    if (firebaseAuthUser.photoURL && firebaseAuthUser.photoURL !== userProfile.avatar) profileUpdates.avatar = firebaseAuthUser.photoURL;
-                    if (Object.keys(profileUpdates).length > 0) {
-                        if (!db) { console.error("App.js: Firestore 'db' is null while trying to update profile!"); throw new Error("Firestore not available for profile update."); }
-                        await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
-                        userProfile = { ...userProfile, ...profileUpdates };
-                        console.log("App.js: Firestore profile UPDATED for UID:", firebaseAuthUser.uid);
-                    }
-                }
-                
-                setUser(userProfile);
-                await fetchUserProgress(firebaseAuthUser.uid);
-                if (userProfile && userProfile.teamId) {
-                    await fetchUserTeam(userProfile.teamId);
-                } else {
-                    setUserTeam(null);
-                }
-                setCurrentView('dashboard');
-            } else {
-                console.log("App.js: User IS NOT signed in (firebaseAuthUser is null). Resetting state.");
-                setUser(null);
-                setUserTeam(null);
-                setUserProgress({});
-                setCurrentView('login');
-                setSelectedModule(null);
-                setCurrentLesson(null);
+          if (!userProfile) {
+            console.log("App.js: No Firestore profile for UID:", firebaseAuthUser.uid, ". Creating new profile.");
+            const newUserProfileData = {
+              id: firebaseAuthUser.uid,
+              name: firebaseAuthUser.displayName || `User${Math.floor(Math.random() * 10000)}`,
+              email: firebaseAuthUser.email,
+              avatar: firebaseAuthUser.photoURL || `https://source.boringavatars.com/beam/120/${firebaseAuthUser.email || firebaseAuthUser.uid}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`,
+              xp: 0, level: 1, streak: 0, teamId: null,
+              createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
+            };
+            if (!db) { console.error("App.js: Firestore 'db' instance is not available for creating profile."); throw new Error("Firestore not available");}
+            await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
+            userProfile = newUserProfileData;
+            console.log("App.js: New Firestore profile created for UID:", firebaseAuthUser.uid);
+          } else {
+            console.log("App.js: Existing Firestore profile found for UID:", firebaseAuthUser.uid, ". Updating profile.");
+            const profileUpdates = { lastLogin: serverTimestamp() };
+            if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) profileUpdates.name = firebaseAuthUser.displayName;
+            if (firebaseAuthUser.photoURL && firebaseAuthUser.photoURL !== userProfile.avatar) profileUpdates.avatar = firebaseAuthUser.photoURL;
+            
+            if (Object.keys(profileUpdates).length > 0) { // Only update if there are changes
+                if (!db) { console.error("App.js: Firestore 'db' instance is not available for updating profile."); throw new Error("Firestore not available");}
+                await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
             }
-        } catch (error) {
-            console.error("App.js: CRITICAL ERROR in onAuthStateChanged's async block:", error);
-            setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
-            setMessage(`Error during authentication processing: ${error.message}. Please try again.`);
-        } finally {
-            console.log("App.js: onAuthStateChanged FINALLY block. Setting loading to false.");
-            setLoading(false);
-            setActionLoading(false);
+            userProfile = { ...userProfile, ...profileUpdates }; // Ensure local userProfile is updated
+            console.log("App.js: Firestore profile updated for UID:", firebaseAuthUser.uid);
+          }
+
+          setUser(userProfile); // Set user state with the fetched/created/updated profile
+          console.log("App.js: User state (Firestore profile) set. Fetching progress for UID:", firebaseAuthUser.uid);
+          await fetchUserProgress(firebaseAuthUser.uid);
+
+          if (userProfile.teamId) {
+            console.log("App.js: User has teamId:", userProfile.teamId, ". Fetching team data.");
+            await fetchUserTeam(userProfile.teamId);
+          } else {
+            setUserTeam(null);
+            console.log("App.js: User has no teamId.");
+          }
+          // Only navigate to dashboard if coming from login or if view isn't set.
+          // This prevents overriding currentView if onAuthStateChanged fires for token refresh.
+          setCurrentView(prevView => (prevView === 'login' || !prevView) ? 'dashboard' : prevView);
+          console.log("App.js: User setup complete.");
+
+        } else {
+          console.log("App.js: No Firebase Auth User signed in. Resetting user state.");
+          setUser(null); setUserTeam(null); setUserProgress({});
+          setCurrentView('login');
+          setSelectedModule(null); setCurrentLesson(null);
         }
+      } catch (error) {
+        console.error("App.js: CRITICAL ERROR within onAuthStateChanged async block:", error);
+        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
+        setMessage("An error occurred handling authentication. Please check console and try again.");
+      } finally {
+        console.log("App.js: onAuthStateChanged finally block. setLoading(false).");
+        setLoading(false);
+      }
     });
 
     return () => {
-        console.log("[App.js] Auth listener CLEANUP.");
-        clearTimeout(timeoutId);
-        if (unsubscribe) unsubscribe();
+      console.log("App.js: Auth listener cleaning up.");
+      unsubscribe();
     };
   }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]);
 
@@ -383,14 +373,6 @@ const App = () => {
   }, [vexpertChallengeBank, selectedChallengeCategories.length]);
 
 
-  const handleChallengeAnswer = useCallback((selectedIndex) => {
-    if (showChallengeAnswer) return;
-    setShowChallengeAnswer(true); setChallengeSelectedAnswer(selectedIndex);
-    if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
-      setChallengeScore(s => s + 1);
-    }
-  }, [challengeQuestions, currentChallengeQuestionIdx, showChallengeAnswer]); // Added dependencies
-
   useEffect(() => {
     let interval;
     if (challengeState === 'active' && challengeTimer > 0 && !showChallengeAnswer) {
@@ -398,10 +380,10 @@ const App = () => {
         setChallengeTimer(prevTime => prevTime - 1);
       }, 1000);
     } else if (challengeState === 'active' && challengeTimer === 0 && !showChallengeAnswer) {
-      handleChallengeAnswer(null);
+      handleChallengeAnswer(null); // Automatically submit if timer runs out
     }
     return () => clearInterval(interval);
-  }, [challengeState, challengeTimer, showChallengeAnswer, handleChallengeAnswer]); // Added handleChallengeAnswer
+  }, [challengeState, challengeTimer, showChallengeAnswer]); // handleChallengeAnswer removed from deps to avoid loop
 
 
   const handleLoginSuccess = async (credentialResponse) => {
@@ -420,22 +402,23 @@ const App = () => {
       console.log("App.js: Attempting Firebase signInWithCredential...");
       const firebaseAuthResult = await signInWithCredential(auth, credential);
       console.log("App.js: Firebase signInWithCredential successful. Firebase User UID:", firebaseAuthResult.user.uid);
+      // onAuthStateChanged will now handle the rest: fetching/creating profile, setting state, navigation.
       setMessage(`Successfully signed in with Firebase as ${firebaseAuthResult.user.displayName || firebaseAuthResult.user.email}!`);
     } catch (error) {
       console.error("App.js: Error in handleLoginSuccess (Firebase signInWithCredential):", error);
+      // Check for specific Firebase error codes if needed
       if (error.code === 'auth/configuration-not-found') {
-          setMessage(`Firebase Config Error: ${error.message}. Check Firebase.js & console.`);
-      } else if (error.code === 'auth/invalid-credential') {
-          setMessage(`Firebase Auth Error: ${error.message}. Client ID mismatch or token issue. Check Firebase & Google Cloud Console OAuth settings.`);
+          setMessage(`Firebase Config Error: ${error.message}. Please ensure Firebase is correctly configured with your project details in Firebase.js.`);
       } else {
           setMessage(`Firebase sign-in error: ${error.message}. Please try again.`);
       }
-      googleLogout();
+      googleLogout(); // Ensure Google session is also cleared on Firebase error
     } finally {
       console.log("App.js: handleLoginSuccess finally block. setActionLoading(false).");
-      setActionLoading(false);
+      setActionLoading(false); // Action loading should be false here, main loading is handled by onAuthStateChanged
     }
   };
+
 
   const handleLoginError = (error) => {
     console.error("App.js: Google Login Button Error (@react-oauth/google):", error);
@@ -446,17 +429,19 @@ const App = () => {
   const handleLogout = async () => {
     console.log("App.js: handleLogout called.");
     if (!auth) {
-        console.error("App.js: FATAL in handleLogout - Firebase 'auth' service not available!");
+        console.error("App.js: FATAL in handleLogout - Firebase 'auth' service is not available!");
         setMessage("Critical Firebase Error: Auth service not loaded. Cannot process logout.");
-        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login'); 
+        // Manually reset state as a fallback
+        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
         return;
     }
     setActionLoading(true);
     try {
-      await firebaseSignOut(auth); 
-      googleLogout();
+      await firebaseSignOut(auth); // Triggers onAuthStateChanged
+      googleLogout(); // Clear Google session
       console.log("App.js: Firebase sign out and Google logout successful.");
       setMessage('You have been logged out successfully.');
+      // onAuthStateChanged will handle resetting user state and view to 'login'
     } catch (error) {
       console.error("App.js: Error during logout:", error);
       setMessage('Error during logout.');
@@ -466,45 +451,49 @@ const App = () => {
   };
 
   const navigate = (view, data = null) => {
-    console.log(`[App.js navigate] To: ${view}, Data:`, data);
-    setMessage('');
+    setMessage(''); // Clear messages on navigation
     setCurrentView(view);
     if (data) {
       if (view === 'module') {
         const moduleData = learningModules.find(m => m.id === (data.id || data));
         setSelectedModule(moduleData);
-        setCurrentLesson(null);
+        setCurrentLesson(null); // Reset lesson when navigating to module view
       } else if (view === 'lessonContent' && data.lesson && data.moduleId) {
         const moduleForLesson = learningModules.find(m => m.id === data.moduleId);
         if (moduleForLesson) {
-            setSelectedModule(moduleForLesson);
+            setSelectedModule(moduleForLesson); // Ensure module context is set
             setCurrentLesson(data.lesson);
         } else {
             setMessage("Error: Module context for lesson not found.");
-            setCurrentView('dashboard');
+            setCurrentView('dashboard'); // Fallback
         }
       } else if (view === 'quiz') setQuizData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
       else if (view === 'game') setGameData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
     } else {
+      // Reset contextual states if navigating to a top-level view without specific data
       if (!['module', 'lessonContent', 'quiz', 'game', 'challenge'].includes(view)) {
         setSelectedModule(null); setCurrentLesson(null); setQuizData(null); setGameData(null);
       }
-      if(view === 'challenge') {
-        setChallengeState('idle'); setChallengeScore(0); setCurrentChallengeQuestionIdx(0);
-        setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
+      if(view === 'challenge') { // Reset challenge state when navigating to it
+        setChallengeState('idle');
+        setChallengeScore(0);
+        setCurrentChallengeQuestionIdx(0);
+        setChallengeSelectedAnswer(null);
+        setShowChallengeAnswer(false);
       }
     }
   };
 
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 7000); return () => clearTimeout(t); } }, [message]);
+  // Auto-clear messages
+  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 5000); return () => clearTimeout(t); } }, [message]);
 
+  // Level up logic
   useEffect(() => {
     if (user && user.xp !== undefined && user.level !== undefined && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) {
       const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1;
-      console.log(`[App.js LevelUp] User ${user.id} leveled up to ${newLevel}`);
-      setUser(prev => ({ ...prev, level: newLevel }));
+      setUser(prev => ({ ...prev, level: newLevel })); // Update local state
       setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`);
-      if(user.id && db) {
+      if(user.id && db) { // Update Firestore
           const userRef = doc(db, "users", user.id);
           updateDoc(userRef, { level: newLevel })
             .then(() => console.log("App.js: Level updated in Firestore for UID:", user.id))
@@ -513,43 +502,63 @@ const App = () => {
           console.error("App.js: Cannot update level in Firestore, 'db' instance is not available.");
       }
     }
-  }, [user, XP_PER_LEVEL]); 
+  }, [user, XP_PER_LEVEL]); // db removed from deps
 
 
   const handleCompleteItem = async (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
-    if (!user || !user.id) {setMessage("Error: User not identified."); return;}
-    if (!db) {setMessage("Error: Database service unavailable."); return;}
-    console.log(`App.js: handleCompleteItem UID: ${user.id}, modId: ${moduleId}, lesId: ${lessonId}, xp: ${xpEarned}`);
+    if (!user || !user.id) {setMessage("Error: User not identified."); console.error("App.js: handleCompleteItem - User not identified."); return;}
+    if (!db) {setMessage("Error: Database service unavailable."); console.error("App.js: handleCompleteItem - DB not available."); return;}
+
+    console.log(`App.js: handleCompleteItem called for UID: ${user.id}, moduleId: ${moduleId}, lessonId: ${lessonId}, xp: ${xpEarned}`);
     setActionLoading(true);
     const userRef = doc(db, "users", user.id);
     const progressDocRef = doc(db, `users/${user.id}/progress`, moduleId);
+
     try {
       const batch = writeBatch(db);
+      // Increment user's total XP
       batch.update(userRef, { xp: increment(xpEarned) });
-      const sanitizedLessonId = lessonId.replace(/\./g, '_');
-      const currentModuleProgSnap = await getDoc(progressDocRef);
+
+      // Update module progress
+      const sanitizedLessonId = lessonId.replace(/\./g, '_'); // Sanitize for Firestore field names
+      const currentModuleProgSnap = await getDoc(progressDocRef); // Get current progress for the module
       let currentModuleXp = 0;
       let existingLessons = {};
+
       if (currentModuleProgSnap.exists()) {
           const currentData = currentModuleProgSnap.data();
           currentModuleXp = currentData.moduleXp || 0;
           existingLessons = currentData.lessons || {};
       }
+      // Update specific lesson's status and score within the module's progress
       const updatedLessonData = { ...existingLessons, [sanitizedLessonId]: { completed: true, score: score } };
-      batch.set(progressDocRef, { lessons: updatedLessonData, moduleXp: currentModuleXp + xpEarned, title: learningModules.find(m=>m.id===moduleId)?.title || 'Module'}, { merge: true });
+      batch.set(progressDocRef, { lessons: updatedLessonData, moduleXp: currentModuleXp + xpEarned }, { merge: true });
+
+      // If user is in a team, increment team's total XP
       if (userTeam && userTeam.id) {
         const teamRef = doc(db, "teams", userTeam.id);
         batch.update(teamRef, { totalXP: increment(xpEarned) });
       }
-      await batch.commit();
+
+      await batch.commit(); // Commit all batched writes
+      console.log("App.js: Item completion saved to Firebase.");
+
+      // Update local state for immediate UI feedback
       setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
       setUserProgress(prev => ({ ...prev, [moduleId]: { ...prev[moduleId] || {lessons:{}, moduleXp:0}, lessons: updatedLessonData, moduleXp: (prev[moduleId]?.moduleXp || 0) + xpEarned }}));
       if (userTeam) {
         const updatedTeamTotalXP = (userTeam.totalXP || 0) + xpEarned;
         setUserTeam(prevTeam => ({ ...prevTeam, totalXP: updatedTeamTotalXP }));
+        // Update allTeams if the current user's team is in that list
         setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? { ...t, totalXP: updatedTeamTotalXP } : t));
       }
+
+      // Refresh selectedModule to reflect progress if it's the one being worked on
+      // This is tricky; a simple spread might not re-trigger child component updates if object ref is same.
+      // Consider fetching module data again or a more robust state update for selectedModule if direct UI update is needed.
       if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
+
+
       setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
     } catch (error) {
       console.error("App.js: Error completing item in Firebase:", error);
@@ -560,36 +569,58 @@ const App = () => {
   };
 
   const handleJoinTeam = async (teamCodeToJoinArg = joinTeamCodeInput) => {
-    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput;
+    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput; // Handle direct call with code
     if (!teamCodeToJoin.trim()) { setMessage("Please enter a team code."); return; }
     if (userTeam) { setMessage("You are already in a team."); return; }
     if (!user || !user.id) { setMessage("User not logged in."); return; }
     if (!db) { setMessage("Database service unavailable."); return; }
+
+    console.log("App.js: handleJoinTeam called with code:", teamCodeToJoin, "for user:", user.id);
     setActionLoading(true);
     try {
       const teamsQuery = query(collection(db, "teams"), where("code", "==", teamCodeToJoin.trim()));
       const querySnapshot = await getDocs(teamsQuery);
-      if (querySnapshot.empty) { setMessage("Invalid team code or team not found."); setActionLoading(false); return; }
-      const teamDocSnap = querySnapshot.docs[0];
+
+      if (querySnapshot.empty) {
+        setMessage("Invalid team code or team not found."); setActionLoading(false); return;
+      }
+
+      const teamDocSnap = querySnapshot.docs[0]; // Assuming team codes are unique
       const teamToJoinData = { id: teamDocSnap.id, ...teamDocSnap.data() };
+
+      // Check if user is already a member (edge case or for UI consistency)
       if (teamToJoinData.memberIds && teamToJoinData.memberIds.includes(user.id)) {
-          setMessage(`You are already a member of ${teamToJoinData.name}.`); setUserTeam(teamToJoinData);
-          const userRefForConsistency = doc(db, "users", user.id); await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
+          setMessage(`You are already a member of ${teamToJoinData.name}.`);
+          setUserTeam(teamToJoinData); // Ensure local state is consistent
+          // Ensure user's profile also has this teamId (consistency check)
+          const userRefForConsistency = doc(db, "users", user.id);
+          await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
           setActionLoading(false); return;
       }
+
       const batch = writeBatch(db);
       const teamRef = doc(db, "teams", teamToJoinData.id);
-      batch.update(teamRef, { memberIds: arrayUnion(user.id) });
+      batch.update(teamRef, { memberIds: arrayUnion(user.id) }); // Add user to team's member list
+
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: teamToJoinData.id });
+      batch.update(userRef, { teamId: teamToJoinData.id }); // Set teamId on user's profile
+
       await batch.commit();
+
+      // Fetch the updated team data to reflect new member count, etc.
       const updatedTeamSnap = await getDoc(teamRef);
       const finalTeamData = {id: updatedTeamSnap.id, ...updatedTeamSnap.data()};
-      setUserTeam(finalTeamData);
-      setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t));
-      setMessage(`Successfully joined team: ${finalTeamData.name}!`); setJoinTeamCodeInput('');
-    } catch (error) { console.error("App.js: Error joining team:", error); setMessage("Failed to join team."); }
-    finally { setActionLoading(false); }
+
+      setUserTeam(finalTeamData); // Update local state
+      setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t)); // Update in allTeams list
+      setMessage(`Successfully joined team: ${finalTeamData.name}!`);
+      setJoinTeamCodeInput(''); // Clear input
+    } catch (error) {
+      console.error("App.js: Error joining team:", error);
+      setMessage("Failed to join team. " + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleCreateTeam = async () => {
@@ -597,132 +628,207 @@ const App = () => {
     if (userTeam) { setMessage("You are already in a team."); return; }
     if (!user || !user.id) { setMessage("User not logged in."); return; }
     if (!db) {setMessage("Database service unavailable."); return;}
+
+    console.log("App.js: handleCreateTeam called with name:", createTeamNameInput, "for user:", user.id);
     setActionLoading(true);
     try {
       const newTeamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const newTeamData = {
-        name: createTeamNameInput.trim(), code: newTeamCode,
+        name: createTeamNameInput.trim(),
+        code: newTeamCode,
         description: `A brand new Vexcel team led by ${user.name}!`,
-        totalXP: user.xp || 0, memberIds: [user.id], creatorId: user.id,
+        totalXP: user.xp || 0, // Team starts with leader's XP
+        memberIds: [user.id], // Leader is the first member
+        creatorId: user.id,
         createdAt: serverTimestamp(),
+        // 'members' count can be derived from memberIds.length or stored explicitly
       };
+
       const teamColRef = collection(db, "teams");
-      const teamDocRef = await addDoc(teamColRef, newTeamData);
+      const teamDocRef = await addDoc(teamColRef, newTeamData); // Create new team document
+
       const userRef = doc(db, "users", user.id);
-      await updateDoc(userRef, { teamId: teamDocRef.id });
-      const createdTeamForState = { id: teamDocRef.id, ...newTeamData };
+      await updateDoc(userRef, { teamId: teamDocRef.id }); // Update user's profile with new teamId
+
+      const createdTeamForState = { id: teamDocRef.id, ...newTeamData, members: 1 }; // For local state
       setUserTeam(createdTeamForState);
-      setAllTeams(prev => [...prev, createdTeamForState]);
-      setMessage(`Team "${createdTeamForState.name}" created! Code: ${newTeamCode}`); setCreateTeamNameInput('');
-    } catch (error) { console.error("App.js: Error creating team:", error); setMessage("Failed to create team."); }
-    finally { setActionLoading(false); }
+      setAllTeams(prev => [...prev, createdTeamForState]); // Add to local list of all teams
+      setMessage(`Team "${createdTeamForState.name}" created! Your Team Code is: ${newTeamCode}`);
+      setCreateTeamNameInput(''); // Clear input
+    } catch (error) {
+      console.error("App.js: Error creating team:", error);
+      setMessage("Failed to create team. " + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleLeaveTeam = async () => {
-    if (!userTeam || !userTeam.id || !user || !user.id) return;
+    if (!userTeam || !userTeam.id || !user || !user.id) return; // Basic checks
     if (!db) {setMessage("Database service unavailable."); return;}
+
+    console.log("App.js: handleLeaveTeam called for team:", userTeam.id, "by user:", user.id);
     setActionLoading(true);
     try {
-      const teamName = userTeam.name;
-      const teamIdToRemove = userTeam.id;
+      const teamName = userTeam.name; // For message
       const batch = writeBatch(db);
-      const teamRef = doc(db, "teams", teamIdToRemove);
-      batch.update(teamRef, { memberIds: arrayRemove(user.id) });
+
+      const teamRef = doc(db, "teams", userTeam.id);
+      batch.update(teamRef, { memberIds: arrayRemove(user.id) }); // Remove user from team's member list
+
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: null });
+      batch.update(userRef, { teamId: null }); // Clear teamId from user's profile
+
       await batch.commit();
+
+      // Update local state
       setUserTeam(null);
-      setAllTeams(prevTeams => prevTeams.map(t => (t.id === teamIdToRemove ? { ...t, memberIds: t.memberIds?.filter(id => id !== user.id) } : t)));
+      // Update allTeams list if it's being displayed/cached
+      setAllTeams(prevTeams =>
+        prevTeams.map(t =>
+          (t.id === userTeam.id ?
+            { ...t, memberIds: t.memberIds?.filter(id => id !== user.id), members: (t.memberIds?.filter(id => id !== user.id).length || 0) }
+            : t)
+        )
+      );
       setMessage(`You have left team: ${teamName}.`);
-    } catch (error) { console.error("App.js: Error leaving team:", error); setMessage("Failed to leave team."); }
-    finally { setActionLoading(false); }
+    } catch (error) {
+      console.error("App.js: Error leaving team:", error);
+      setMessage("Failed to leave team. " + error.message);
+    } finally {
+      setActionLoading(false);
+    }
   };
 
+  // Fetch all teams for browsing or leaderboard
   const fetchAllTeamsForBrowse = useCallback(async () => {
+    console.log("App.js: fetchAllTeamsForBrowse called. Current view:", currentView);
     if (!db) { console.error("App.js: fetchAllTeamsForBrowse - DB not available."); return; }
+
+    // Only fetch if on relevant view and teams aren't already loaded (or to refresh)
     if (currentView === 'browseTeams' || currentView === 'leaderboard') {
       setActionLoading(true);
       try {
         const teamsColRef = collection(db, "teams");
-        let q = teamsColRef;
-        if (currentView === 'leaderboard') q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50));
-        const querySnapshot = await getDocs(q);
-        const loadedTeams = querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data()}));
-        setAllTeams(loadedTeams);
-      } catch (error) { console.error("App.js: Error fetching teams:", error); setMessage("Could not load teams."); }
-      finally { setActionLoading(false); }
-    }
-  }, [currentView]);
+        let q = teamsColRef; // Default query
+        if (currentView === 'leaderboard') {
+          q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50)); // Order for leaderboard
+        }
+        // Add other orderBy or where clauses if needed for browseTeams, e.g., orderBy("memberCount", "desc")
 
+        const querySnapshot = await getDocs(q);
+        const loadedTeams = querySnapshot.docs.map(docSnap => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+          members: docSnap.data().memberIds?.length || 0 // Ensure 'members' count is derived
+        }));
+        setAllTeams(loadedTeams);
+        console.log("App.js: Teams fetched for browse/leaderboard:", loadedTeams.length);
+      } catch (error) {
+        console.error("App.js: Error fetching teams for browse/leaderboard:", error);
+        setMessage("Could not load teams list.");
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  }, [currentView]); // db removed
+
+  // Effect to trigger fetchAllTeamsForBrowse when view changes to relevant ones
   useEffect(() => {
     fetchAllTeamsForBrowse();
-  }, [fetchAllTeamsForBrowse]);
+  }, [fetchAllTeamsForBrowse]); // This will run when fetchAllTeamsForBrowse (and its dep currentView) changes
 
 
   const startVexpertChallenge = () => {
-    setActionLoading(true);
+    console.log("App.js: startVexpertChallenge called.");
+    setActionLoading(true); // Indicate loading while preparing
+    // ... (rest of the logic is fine) ...
     if (selectedChallengeCategories.length === 0) {setMessage("Please select at least one category."); setActionLoading(false); return;}
     const filtered = vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category));
     if (filtered.length === 0) {setMessage("No questions for selected categories."); setActionLoading(false); return;}
+
     let count = numChallengeQuestionsInput;
-    if (count > filtered.length) { setMessage(`Only ${filtered.length} questions available for selected categories. Reducing count.`); count = filtered.length;}
+    if (count > filtered.length) {
+        setMessage(`Only ${filtered.length} questions available for the selected categories. Reducing question count.`);
+        count = filtered.length;
+    }
     if (count <= 0) {setMessage("Cannot start with 0 questions."); setActionLoading(false); return;}
-    
+
     const shuffled = [...filtered].sort(() => 0.5 - Math.random());
     setChallengeQuestions(shuffled.slice(0, count));
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0); setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
-    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false);
-    setMessage(`Challenge started with ${count} questions!`);
+    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false); // Set to active and stop loading
+    setMessage(`Challenge started with ${count} questions! Good luck!`);
+  };
+
+
+  const handleChallengeAnswer = (selectedIndex) => {
+    if (showChallengeAnswer) return; // Prevent re-answering
+    setShowChallengeAnswer(true); // Show feedback
+    setChallengeSelectedAnswer(selectedIndex); // Record selected answer
+    if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
+      setChallengeScore(s => s + 1); // Increment score if correct
+    }
+    // Timer is cleared by useEffect when showChallengeAnswer becomes true
   };
 
   const handleNextChallengeQuestion = async () => {
-    setShowChallengeAnswer(false); 
-    setChallengeSelectedAnswer(null);
+    setShowChallengeAnswer(false); // Hide feedback for next question
+    setChallengeSelectedAnswer(null); // Reset selected answer
+
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
-      setCurrentChallengeQuestionIdx(i => i + 1); 
-      setChallengeTimer(QUESTION_TIMER_DURATION);
+      setCurrentChallengeQuestionIdx(i => i + 1); // Move to next question
+      setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer
     } else {
+      // Challenge finished
       setChallengeState('results');
       const xp = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
+      console.log("App.js: Challenge finished. Score:", challengeScore, "XP:", xp);
+
       if (user && user.id && xp > 0 && db) {
         setActionLoading(true);
         try {
           const batch = writeBatch(db);
           const userRef = doc(db, "users", user.id);
           batch.update(userRef, { xp: increment(xp) });
-          if (userTeam && userTeam.id) batch.update(doc(db, "teams", userTeam.id), { totalXP: increment(xp) });
+
+          if (userTeam && userTeam.id) { // Also update team XP if applicable
+            batch.update(doc(db, "teams", userTeam.id), { totalXP: increment(xp) });
+          }
           await batch.commit();
+
+          // Update local state
           setUser(prev => ({ ...prev, xp: (prev.xp || 0) + xp }));
           if (userTeam) {
             const newTeamXp = (userTeam.totalXP || 0) + xp;
             setUserTeam(prev => ({ ...prev, totalXP: newTeamXp }));
             setAllTeams(prevs => prevs.map(t => t.id === userTeam.id ? { ...t, totalXP: newTeamXp } : t));
           }
-          setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}. +${xp} XP!`);
-        } catch (e) { console.error("App.js: Error saving challenge XP:", e); setMessage("Error saving XP."); }
+          setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}. You earned ${xp} XP!`);
+        } catch (e) {
+          console.error("App.js: Error saving challenge XP:", e);
+          setMessage("Error saving your XP. Your score was " + `${challengeScore}/${challengeQuestions.length}.`);
+        }
         finally { setActionLoading(false); }
-      } else if (xp === 0 && challengeQuestions.length > 0) {
-        setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}.`);
-      } else if(!db && xp > 0) {
-        setMessage("DB error. Challenge XP not saved.");
-      } else if (challengeQuestions.length === 0) {
-         setMessage("Challenge ended, but no questions were loaded.");
+      } else if (xp === 0) {
+        setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}. No XP earned this time.`);
+      } else if(!db) {
+        setMessage("Database error. Challenge XP could not be saved. Your score was " + `${challengeScore}/${challengeQuestions.length}.`);
       }
     }
   };
 
   const resetChallenge = () => {
-    setChallengeState('idle'); 
-    setChallengeQuestions([]);
-    setCurrentChallengeQuestionIdx(0); 
-    setChallengeScore(0);
-    setChallengeSelectedAnswer(null); 
-    setShowChallengeAnswer(false);
+    setChallengeState('idle'); setChallengeQuestions([]);
+    setCurrentChallengeQuestionIdx(0); setChallengeScore(0);
+    setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
+    // numChallengeQuestionsInput and selectedChallengeCategories remain as user configured
+    console.log("App.js: Challenge reset to configuration screen.");
   };
 
 
-  // --- Sub-components ---
-  const Navigation = () => ( <nav className="nav">
+  // --- Sub-components (JSX remains largely the same) ---
+  const Navigation = () => ( /* ... existing JSX ... */ <nav className="nav">
       <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
         <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
         <span className="brand-text">Vexcel</span>
@@ -743,7 +849,7 @@ const App = () => {
       )}
     </nav>
   );
-  const Dashboard = () => { if (!user) return null;
+  const Dashboard = () => { /* ... existing JSX ... */ if (!user) return null;
     const modulesInProgress = learningModules.filter(m => {
         const prog = userProgress[m.id];
         return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
@@ -772,7 +878,7 @@ const App = () => {
       </div>
       {userTeam && (
         <div className="team-card">
-          <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{(userTeam.memberIds ? userTeam.memberIds.length : 0)} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
+          <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
           <div className="team-stats"><span className="team-xp">{(userTeam.totalXP || 0).toLocaleString()} XP</span></div>
         </div>
       )}
@@ -818,7 +924,7 @@ const App = () => {
         </div>
     </div>
   )};
-  const ModuleView = () => { if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
+  const ModuleView = () => { /* ... existing JSX ... */ if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
     const Icon = selectedModule.icon;
     return (
@@ -836,8 +942,7 @@ const App = () => {
         </div>
         <div className="lessons-list">
           {selectedModule.content.lessons.map((lesson, index) => {
-            const lessonSanitizedId = lesson.id.replace(/\./g, '_');
-            const lessonState = moduleProg.lessons[lessonSanitizedId] || { completed: false };
+            const lessonState = moduleProg.lessons[lesson.id.replace(/\./g, '_')] || { completed: false };
             const isCompleted = lessonState.completed;
             const prevLessonSanitizedId = index > 0 ? selectedModule.content.lessons[index - 1].id.replace(/\./g, '_') : null;
             const isLocked = index > 0 && !(moduleProg.lessons[prevLessonSanitizedId]?.completed);
@@ -861,37 +966,32 @@ const App = () => {
       </div>
     );
   };
-  const LessonContentView = () => { if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
-    const sanitizedLessonId = currentLesson.id.replace(/\./g, '_');
+  const LessonContentView = () => { /* ... existing JSX ... */ if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
-    const lessonState = moduleProg.lessons[sanitizedLessonId] || { completed: false };
+    const lessonState = moduleProg.lessons[currentLesson.id.replace(/\./g, '_')] || { completed: false };
     const isCompleted = lessonState.completed;
 
     const handleMarkCompleteAndContinue = () => {
       if (actionLoading) return;
+      const sanitizedLessonId = currentLesson.id.replace(/\./g, '_');
       if (!isCompleted) handleCompleteItem(selectedModule.id, sanitizedLessonId, currentLesson.type, null, currentLesson.xp);
-      
       const currentIndex = selectedModule.content.lessons.findIndex(l => l.id === currentLesson.id);
       const nextLesson = selectedModule.content.lessons[currentIndex + 1];
-      
       if (nextLesson) {
-        const currentNowCompleted = true; 
-        const nextLessonSanitizedId = nextLesson.id.replace(/\./g, '_');
-        const nextLessonProg = moduleProg.lessons[nextLessonSanitizedId] || { completed: false };
-        const isNextLocked = !(currentNowCompleted) && !nextLessonProg.completed && currentIndex + 1 > 0;
+        const nextLessonProg = moduleProg.lessons[nextLesson.id.replace(/\./g, '_')] || { completed: false };
+        // Check if next lesson should be unlocked (current must be completed *now* or already was)
+        const currentNowCompleted = true; // Assume completion after clicking
+        const isNextLocked = !(currentNowCompleted || nextLessonProg.completed) && currentIndex + 1 > 0; // Simplified, re-evaluate lock logic if complex dependencies exist
 
-        if (isNextLocked) { 
-             navigate('module', { id: selectedModule.id }); 
-             return; 
+        if (isNextLocked) { // If next is still locked (e.g. if completion failed or logic is strict)
+            navigate('module', { id: selectedModule.id }); return;
         }
 
         if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
-        else navigate('module', { id: selectedModule.id });
-      } else {
-        navigate('module', { id: selectedModule.id });
-      }
+        else navigate('module', { id: selectedModule.id }); // Fallback
+      } else navigate('module', { id: selectedModule.id }); // No next lesson, back to module
     };
 
     return (
@@ -909,75 +1009,58 @@ const App = () => {
       </div>
     );
   };
-  const QuizView = () => { 
-    const [currentQIdx, setCurrentQIdx] = useState(0);
+  const QuizView = () => { /* ... existing JSX ... */ const [currentQIdx, setCurrentQIdx] = useState(0);
     const [selectedAns, setSelectedAns] = useState(null);
     const [showRes, setShowRes] = useState(false);
     const [quizScore, setQuizScore] = useState(0);
     const [showExplanation, setShowExplanation] = useState(false);
 
-    if (!quizData || !quizData.lessonId || !selectedModule) return <p className="error-message">Loading quiz...</p>;
-    
+    if (!quizData || !quizData.lessonId) return <p className="error-message">Loading quiz...</p>;
     const sanitizedLessonId = quizData.lessonId.replace(/\./g, '_');
     const quizContent = sampleQuizzes[sanitizedLessonId];
-
     if (!quizContent) return <p className="error-message">Quiz content not found for: {quizData.lessonId}</p>;
 
     const handleAnsSelect = (idx) => { if (showExplanation || actionLoading) return; setSelectedAns(idx); }
-    
     const handleSubmitAnswer = () => {
       if (selectedAns === null || actionLoading) return;
       setShowExplanation(true);
       const q = quizContent.questions[currentQIdx];
-      if (selectedAns === q.correct) { 
-        setQuizScore(s => s + 1); 
-      }
+      if (selectedAns === q.correct) { setQuizScore(s => s + 1); }
     };
-
     const handleNextQ = () => {
       if (actionLoading) return;
-      setShowExplanation(false); 
-      setSelectedAns(null);
+      setShowExplanation(false); setSelectedAns(null);
       if (currentQIdx + 1 < quizContent.questions.length) {
         setCurrentQIdx(i => i + 1);
       } else {
         setShowRes(true);
-        const finalAttemptScore = quizScore;
-        const passPercent = 70;
-        const isAlreadyCompleted = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId]?.completed;
-
-        if (!isAlreadyCompleted && (finalAttemptScore / quizContent.questions.length) * 100 >= passPercent) {
-          handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalAttemptScore, quizData.lesson.xp);
-        } else if (isAlreadyCompleted) {
-            setMessage(`Quiz reviewed. Score: ${finalAttemptScore}/${quizContent.questions.length}. XP already earned.`);
-        } else {
-            setMessage(`Quiz attempt recorded. Score: ${finalAttemptScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
+        const finalScore = quizScore; // Use captured score for this attempt
+        const passPercent = 70; // Example pass percentage
+        const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
+        if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
+          handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalScore, quizData.lesson.xp);
+        } else if (currentModuleProgress.completed) {
+            setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
+        }
+        else { // Failed to pass or already passed but reviewing
+            setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
         }
       }
     };
-
-    const resetQuiz = () => { 
-      setCurrentQIdx(0); 
-      setSelectedAns(null); 
-      setShowRes(false); 
-      setQuizScore(0); 
-      setShowExplanation(false); 
-    };
+    const resetQuiz = () => { setCurrentQIdx(0); setSelectedAns(null); setShowRes(false); setQuizScore(0); setShowExplanation(false); };
 
     if (showRes) {
-      const perc = quizContent.questions.length > 0 ? Math.round((quizScore / quizContent.questions.length) * 100) : 0;
-      const passedThisAttempt = perc >= 70;
-      const wasAlreadyCompleted = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId]?.completed;
-      const earnedXpThisSession = passedThisAttempt && !wasAlreadyCompleted;
-
+      const perc = Math.round((quizScore / quizContent.questions.length) * 100);
+      const passed = perc >= 70;
+      const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
       return (
         <div className="quiz-result">
-          <div className={`result-icon ${passedThisAttempt ? 'success' : 'fail'}`}>{passedThisAttempt ? <Check /> : <X />}</div>
-          <h2>{passedThisAttempt ? 'Excellent Work!' : 'Keep Practicing!'}</h2>
-          <p>Your score for this attempt: {quizScore}/{quizContent.questions.length} ({perc}%)</p>
-          {earnedXpThisSession && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
-          {wasAlreadyCompleted && <p className="xp-earned">XP previously earned for this quiz.</p>}
-          {!passedThisAttempt && !wasAlreadyCompleted && <p>You need 70% to pass and earn XP for this quiz.</p>}
+          <div className={`result-icon ${passed ? 'success' : 'fail'}`}>{passed ? <Check /> : <X />}</div>
+          <h2>{passed ? 'Excellent Work!' : 'Keep Practicing!'}</h2>
+          <p>Your score: {quizScore}/{quizContent.questions.length} ({perc}%)</p>
+          {passed && !currentModuleProgress.completed && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
+          {passed && currentModuleProgress.completed && <p className="xp-earned">XP previously earned for this quiz.</p>}
+          {!passed && <p>You need 70% to pass and earn XP for this quiz.</p>}
           <div className="result-actions">
             <button onClick={resetQuiz} className="retry-btn" disabled={actionLoading}><RotateCcw className="icon-small"/> Try Again</button>
             <button onClick={() => navigate('module', {id: quizData.moduleId})} className="continue-btn" disabled={actionLoading}>Back to Module <ChevronRight className="icon-small"/></button>
@@ -985,7 +1068,6 @@ const App = () => {
         </div>
       );
     }
-
     const q = quizContent.questions[currentQIdx];
     return (
       <div className="quiz-view">
@@ -1019,12 +1101,9 @@ const App = () => {
       </div>
     );
   };
-  const GameView = () => { 
-    if (!gameData || !gameData.lessonId || !selectedModule) return <p className="error-message">Loading game...</p>;
-    
+  const GameView = () => { /* ... existing JSX ... */ if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
     const sanitizedLessonId = gameData.lessonId.replace(/\./g, '_');
     const gameContent = sampleGames[sanitizedLessonId];
-
     if (!gameContent) return <p className="error-message">Game content not found for: {gameData.lessonId}</p>;
 
     const handleCompleteGame = () => {
@@ -1032,10 +1111,11 @@ const App = () => {
       const isAlreadyCompleted = userProgress[gameData.moduleId]?.lessons[sanitizedLessonId]?.completed;
       if (!isAlreadyCompleted) {
         handleCompleteItem(gameData.moduleId, sanitizedLessonId, 'game', null, gameContent.xp || 30);
+        setMessage(`Challenge "${gameContent.title}" completed! +${gameContent.xp || 30} XP`);
       } else {
         setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
       }
-      navigate('module', {id: gameData.moduleId});
+      navigate('module', {id: gameData.moduleId}); // Navigate back to module after completion/review
     };
 
     return (
@@ -1053,7 +1133,7 @@ const App = () => {
       </div>
     );
   };
-  const TeamsView = () => { return (
+  const TeamsView = () => { /* ... existing JSX ... */ return (
     <div className="teams-view">
       <div className="view-header"> <Users className="header-icon" /> <h1>My Team</h1> <p>Manage your team or join/create a new one.</p> </div>
       {userTeam ? (
@@ -1064,7 +1144,7 @@ const App = () => {
                 <h2>{userTeam.name}</h2>
                 <p className="team-description-small">{userTeam.description}</p>
                 <p><strong>Team Code:</strong> <code className="team-code-display">{userTeam.code}</code> (Share this!)</p>
-                <p>{(userTeam.memberIds ? userTeam.memberIds.length : 0)} members • Rank #{userTeam.rank || 'N/A'} • {(userTeam.totalXP || 0).toLocaleString()} Total XP</p>
+                <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • {(userTeam.totalXP || 0).toLocaleString()} Total XP</p>
             </div>
           </div>
           <button className="leave-team-btn" onClick={handleLeaveTeam} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Leave Team'}</button>
@@ -1091,8 +1171,7 @@ const App = () => {
     </div>
   );
   };
-  const BrowseTeamsView = () => { 
-    const [searchTerm, setSearchTerm] = useState('');
+  const BrowseTeamsView = () => { /* ... existing JSX ... */ const [searchTerm, setSearchTerm] = useState('');
     const filteredAndSortedTeams = useMemo(() =>
         allTeams
             .filter(team =>
@@ -1100,12 +1179,13 @@ const App = () => {
                 (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 team.code.toLowerCase().includes(searchTerm.toLowerCase())
             )
-            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)),
+            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)), // Sort by XP descending
         [allTeams, searchTerm]
     );
 
     useEffect(() => {
-        if (currentView === 'browseTeams' && allTeams.length === 0) {
+        // Fetch teams when the component mounts or view becomes 'browseTeams', if not already loaded
+        if (currentView === 'browseTeams' && allTeams.length === 0) { // Fetch only if needed
             fetchAllTeamsForBrowse();
         }
     }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
@@ -1116,38 +1196,36 @@ const App = () => {
         <div className="view-header"> <Eye className="header-icon" /> <h1>Browse All Teams</h1> <p>Find a team, see who's competing, or get inspired!</p> </div>
         <div className="search-bar-container"> <Search className="search-icon" /> <input type="text" placeholder="Search by name, description, or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="teams-search-input" /> </div>
         {actionLoading && allTeams.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
-        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' && (
+        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? ( // Check currentView to ensure this message is contextual
           <p className="info-message">No teams exist yet. Go to "My Team" to create one!</p>
-        )}
-        { filteredAndSortedTeams.length > 0 && (
+        ) : filteredAndSortedTeams.length > 0 ? (
           <div className="teams-grid">
             {filteredAndSortedTeams.map(team => (
               <div key={team.id} className="team-browse-card">
                 <div className="team-card-header"><h3>{team.name}</h3><span className="team-code-badge">CODE: {team.code}</span></div>
                 <p className="team-description">{team.description || "No description available."}</p>
                 <div className="team-card-footer">
-                  <span><Users size={16} /> {(team.memberIds ? team.memberIds.length : 0)} Members</span> <span><Trophy size={16} /> {(team.totalXP || 0).toLocaleString()} XP</span>
+                  <span><Users size={16} /> {(team.memberIds ? team.memberIds.length : team.members) || 0} Members</span> <span><Trophy size={16} /> {(team.totalXP || 0).toLocaleString()} XP</span>
                   {(!userTeam || userTeam.id !== team.id) && <button onClick={() => handleJoinTeam(team.code)} className="join-team-browse-btn" disabled={actionLoading || !!userTeam}>{!!userTeam ? 'In a Team' : (actionLoading ? 'Processing...' : 'Join Team')}</button>}
                   {userTeam && userTeam.id === team.id && <span className="current-team-indicator"><Check size={16}/> Your Team</span>}
                 </div>
               </div>
             ))}
           </div>
-        )}
-        { !actionLoading && allTeams.length > 0 && filteredAndSortedTeams.length === 0 && (
-          <p className="info-message">No teams match your search criteria.</p>
+        ) : (
+          !actionLoading && <p className="info-message">No teams match your search criteria.</p>
         )}
       </div>
     );
   };
-  const LeaderboardView = () => { 
-    const sortedLeaderboard = useMemo(() =>
+  const LeaderboardView = () => { /* ... existing JSX ... */ const sortedLeaderboard = useMemo(() =>
         [...allTeams].sort((a, b) => (b.totalXP || 0) - (a.totalXP || 0)).map((team, index) => ({ ...team, rank: index + 1 })),
         [allTeams]
     );
 
     useEffect(() => {
-        if (currentView === 'leaderboard' && allTeams.length === 0) {
+        // Fetch teams when the component mounts or view becomes 'leaderboard', if not already loaded
+        if (currentView === 'leaderboard' && allTeams.length === 0) { // Fetch only if needed
             fetchAllTeamsForBrowse();
         }
     }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
@@ -1156,27 +1234,20 @@ const App = () => {
       <div className="leaderboard-view">
         <div className="view-header"> <Trophy className="header-icon" /> <h1>Global Team Leaderboard</h1> <p>See how teams stack up in the Vexcel universe!</p> </div>
         {actionLoading && sortedLeaderboard.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading leaderboard...</p></div>}
-        
-        {!actionLoading && sortedLeaderboard.length > 0 && (
-            <div className="leaderboard-list">
-            {sortedLeaderboard.map((team) => (
-                <div key={team.id} className={`leaderboard-item ${userTeam && team.id === userTeam.id ? 'current-team' : ''}`}>
-                <span className="rank-badge">#{team.rank}</span>
-                <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : 0)} members • Code: {team.code}</p></div>
-                <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
-                </div>
-            ))}
+        <div className="leaderboard-list">
+          {!actionLoading && sortedLeaderboard.length > 0 ? sortedLeaderboard.map((team) => (
+            <div key={team.id} className={`leaderboard-item ${userTeam && team.id === userTeam.id ? 'current-team' : ''}`}>
+              <span className="rank-badge">#{team.rank}</span>
+              <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : team.members) || 0} members • Code: {team.code}</p></div>
+              <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
             </div>
-        )}
-        {!actionLoading && sortedLeaderboard.length === 0 && (
-             <p className="info-message">The leaderboard is currently empty. Create or join a team to get started!</p>
-        )}
+          )) : !actionLoading && <p className="info-message">The leaderboard is currently empty. Create or join a team to get started!</p>}
+        </div>
       </div>
     );
   };
-  const VexpertChallengeView = () => { 
-    if (actionLoading && challengeState === 'idle' && challengeQuestions.length === 0) {
-        return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge Setup...</p></div>;
+  const VexpertChallengeView = () => { /* ... existing JSX ... */ if (actionLoading && challengeState === 'idle') {
+        return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
     }
 
     if (challengeState === 'idle') {
@@ -1200,7 +1271,7 @@ const App = () => {
                   disabled={actionLoading}
                 >
                   {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
-                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0)
+                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) // Unique, valid counts
                     .sort((a,b) => a-b)
                     .map(num => (
                       <option key={num} value={num}>
@@ -1237,7 +1308,7 @@ const App = () => {
             <button
               className="challenge-action-btn start-challenge-btn"
               onClick={startVexpertChallenge}
-              disabled={actionLoading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0 || vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category)).length < numChallengeQuestionsInput || vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category)).length === 0 }
+              disabled={actionLoading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0}
             >
               {actionLoading ? 'Loading...' : `Start ${numChallengeQuestionsInput}-Question Challenge`}
             </button>
@@ -1246,7 +1317,7 @@ const App = () => {
       );
     }
 
-    if (challengeState === 'active' && challengeQuestions.length > 0 && currentChallengeQuestionIdx < challengeQuestions.length) {
+    if (challengeState === 'active' && challengeQuestions.length > 0) {
       const currentQuestion = challengeQuestions[currentChallengeQuestionIdx];
       return (
         <div className="challenge-view active-challenge">
@@ -1281,7 +1352,7 @@ const App = () => {
               <div className="challenge-feedback">
                 {challengeSelectedAnswer === currentQuestion.correctAnswerIndex ?
                   <p className="feedback-correct"><Check size={20}/> Correct!</p> :
-                  <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)} ({currentQuestion.options[currentQuestion.correctAnswerIndex]}).</p>
+                  <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)}.</p>
                 }
                 {currentQuestion.explanation && <p className="explanation-text"><em>Explanation:</em> {currentQuestion.explanation}</p>}
                 <button className="challenge-action-btn next-question-btn" onClick={handleNextChallengeQuestion} disabled={actionLoading}>
@@ -1305,7 +1376,7 @@ const App = () => {
           </div>
           <div className="results-summary">
             <p>You answered {challengeScore} out of {challengeQuestions.length} questions correctly ({percentage}%).</p>
-            {xpAwarded > 0 && <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>}
+            <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>
           </div>
           <div className="challenge-ended-options">
             <button className="challenge-action-btn play-again-btn" onClick={resetChallenge} disabled={actionLoading}>Configure New Challenge</button>
@@ -1314,10 +1385,9 @@ const App = () => {
         </div>
       );
     }
-    return <div className="challenge-view"><p>Loading challenge state or invalid state...</p></div>;
+    return <div className="challenge-view"><p>Loading challenge state...</p></div>;
   };
-  const LoginView = () => { 
-    return (
+  const LoginView = () => { /* ... existing JSX ... */ return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div className="login-container">
         <div className="login-card">
@@ -1326,29 +1396,31 @@ const App = () => {
             <h1>Vexcel</h1>
             <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
           </div>
+          {/* Show this if actionLoading is true (specific to login process) */}
           {actionLoading && currentView === 'login' && (
             <div className="loading-section login-specific-loader">
               <div className="spinner"></div>
               <p>Processing Sign-In...</p>
             </div>
           )}
-          {message && (currentView === 'login') && (
-            <div className={`message login-message ${message.toLowerCase().includes('failed') || message.toLowerCase().includes('error') || message.toLowerCase().includes('invalid') || message.toLowerCase().includes('critical') ? 'error' : (message.toLowerCase().includes('logout') || message.toLowerCase().includes('logged out') ? 'info' : 'success')}`}
-                 dangerouslySetInnerHTML={{ __html: message }}
-            />
+          {message && !user && currentView === 'login' && ( // Only show login-specific messages here
+            <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') || message.includes('logged out') ? 'info' : 'success')}`}>
+              {message}
+            </div>
           )}
+          {/* Show GoogleLogin button only if not actionLoading AND no user is authenticated yet */}
           {!actionLoading && !user && (
             <div className="login-section">
               <GoogleLogin
                 onSuccess={handleLoginSuccess}
                 onError={handleLoginError}
-                useOneTap={true} 
-                auto_select={false}
+                useOneTap={true} // Consider setting to false for more explicit login flow during debugging
+                auto_select={false} // Recommended to be false for clearer UX
                 theme="outline"
                 size="large"
-                text="signin_with"
-                shape="rectangular"
-                width="300px"
+                text="signin_with" // "continue_with" or "signup_with" also options
+                shape="rectangular" // "pill", "circle", "square"
+                width="300px" // Can be customized
               />
             </div>
           )}
@@ -1365,16 +1437,18 @@ const App = () => {
   );
   };
 
-
   // --- Main App Render Logic ---
+  // This 'loading' state is for the initial Firebase auth check.
   if (loading) {
+    // If 'user' is already populated, it means onAuthStateChanged has run, found a user,
+    // and we are likely in the process of fetching their specific data or it's a quick re-render
+    // before setLoading(false) in onAuthStateChanged's finally block is hit.
+    // If 'user' is null, it's the very initial app spin-up before auth state is known.
+    const loadingMessage = user ? "Loading Vexcel Dashboard..." : "Initializing Vexcel Platform...";
     return (
       <div className="full-page-loader">
         <div className="spinner"></div>
-        <p>Initializing Vexcel Platform...</p>
-        {message && message.toLowerCase().includes("critical") && ( // Only show critical timeout messages here
-             <p style={{color: 'red', marginTop: '1rem', maxWidth: '80%', textAlign: 'center', fontWeight: 'bold'}} dangerouslySetInnerHTML={{ __html: message }} />
-        )}
+        <p>{loadingMessage}</p>
       </div>
     );
   }
@@ -1387,20 +1461,18 @@ const App = () => {
         <div className="app">
           <Navigation />
           <main className="main-content">
-            {message && (currentView !== 'login' || user) && !message.toLowerCase().includes("critical") && // Don't show critical timeout messages once main app might render
-                <div className={`message app-message ${message.toLowerCase().includes('failed')||message.toLowerCase().includes('error')||message.toLowerCase().includes('invalid')?'error':(message.toLowerCase().includes('level up')||message.toLowerCase().includes('completed')||message.toLowerCase().includes('🎉')||message.toLowerCase().includes('challenge finished')||message.toLowerCase().includes('successfully')||message.toLowerCase().includes('created') ?'success':'info')}`}
-                 dangerouslySetInnerHTML={{ __html: message }}
-                />
+            {message && (currentView !== 'login' || user) && // Show app messages if not on login view or if user is logged in
+                <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')||message.includes('Successfully')||message.includes('created') ?'success':'info')}`}>{message}</div>
             }
-            {actionLoading && currentView !== 'login' && (
+            {actionLoading && currentView !== 'login' && ( // Show action loader for page transitions etc., but not on login view itself
                  <div className="loading-section page-loader"><div className="spinner" /> <p>Processing...</p></div>
             )}
 
             {currentView === 'dashboard' && <Dashboard />}
             {currentView === 'module' && selectedModule && <ModuleView />}
             {currentView === 'lessonContent' && currentLesson && selectedModule && <LessonContentView />}
-            {currentView === 'quiz' && quizData && selectedModule && <QuizView />}
-            {currentView === 'game' && gameData && selectedModule && <GameView />}
+            {currentView === 'quiz' && quizData && <QuizView />}
+            {currentView === 'game' && gameData && <GameView />}
             {currentView === 'teams' && <TeamsView />}
             {currentView === 'browseTeams' && <BrowseTeamsView />}
             {currentView === 'leaderboard' && <LeaderboardView />}
@@ -1433,19 +1505,18 @@ const App = () => {
         input[type="text"], input[type="password"], input[type="email"], select { font-family: inherit; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s;}
         input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, select:focus { outline: none; border-color: var(--color-blue-500); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
         code { background-color: #f3f4f6; padding: 0.2em 0.4em; margin: 0 0.1em; font-size: 85%; border-radius: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; }
-        .icon { width: 1.25rem; height: 1.25rem; vertical-align: middle; } .icon-small { width: 1rem; height: 1rem; vertical-align: middle; } .icon.rotated { transform: rotate(180deg); }
+        .icon { width: 1.25rem; height: 1.25rem; } .icon-small { width: 1rem; height: 1rem; } .icon.rotated { transform: rotate(180deg); }
         .error-message { color: var(--color-red-600); background-color: var(--color-red-100); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem; border: 1px solid var(--color-red-500); }
         .info-message { color: var(--text-secondary); text-align: center; padding: 1rem; font-style: italic;}
 
-        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.95); gap:1rem; position: fixed; top:0; left:0; z-index:9999; text-align: center; padding: 20px;}
-        .full-page-loader p { font-size: 1.1rem; color: var(--text-secondary); }
-        .spinner { width: 3.5rem; height: 3.5rem; border: 5px solid #e0e0e0; border-top-color: var(--color-blue-500); border-radius: 50%; animation: spin 0.8s linear infinite; margin-bottom: 1rem; }
+        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.9); /* Slightly more opaque */ gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
+        .spinner { width: 3.5rem; height: 3.5rem; border: 5px solid #e0e0e0; border-top-color: var(--color-blue-500); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        .loading-section { display: flex; align-items: center; justify-content:center; gap: 1rem; padding: 1.5rem; background: rgba(255,255,255,0.8); border-radius:8px; margin-bottom:1.5rem; color: var(--text-secondary); box-shadow: var(--shadow-sm); }
+        .loading-section { display: flex; align-items: center; justify-content:center; gap: 1rem; padding: 1.5rem; background: rgba(255,255,255,0.7); border-radius:8px; margin-bottom:1.5rem; color: var(--text-secondary); }
         .loading-section.page-loader { margin: 2rem auto; }
 
-        .message { padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 500; border: 1px solid transparent; box-shadow: var(--shadow-md); text-align: center;}
+        .message { padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 500; border: 1px solid transparent; box-shadow: var(--shadow-sm); }
         .message.app-message {max-width: 800px; margin-left:auto; margin-right:auto;}
         .message.login-message { margin-top: 1.5rem; margin-bottom: 0.5rem; }
         .message.success { background: var(--color-green-100); color: var(--color-green-600); border-color: var(--color-green-500); }
@@ -1455,7 +1526,7 @@ const App = () => {
         .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%); }
         .login-card { background: white; border-radius: 16px; padding: 2.5rem 3rem; box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.2); width: 100%; max-width: 480px; text-align: center; }
         .login-header { margin-bottom: 2rem; }
-        .login-header .brand-icon-large { width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; color: var(--color-blue-500); }
+        .login-header .brand-icon-large { width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; }
         .login-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a202c; margin-bottom: 0.5rem; }
         .login-header p { color: #718096; font-size: 1.05rem; margin-bottom: 1rem;}
         .login-specific-loader { background:transparent; box-shadow:none; padding:1rem 0;}
@@ -1470,12 +1541,10 @@ const App = () => {
         .brand-logo-image { width: 32px; height: 32px; border-radius: 4px; object-fit: contain; }
         .nav-items { display: flex; align-items: center; gap: 0.75rem; }
         .nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border-radius: 6px; color: var(--text-secondary); font-weight: 500; font-size:0.95rem; }
-        .nav-item .icon { margin-right: 0.3rem; }
         .nav-item:hover { background: var(--color-blue-50); color: var(--color-blue-600); }
         .nav-item.active { background: var(--color-blue-500); color: white; }
         .nav-user { display: flex; align-items: center; gap: 0.75rem; padding-left: 1rem; border-left: 1px solid var(--border-color); margin-left: 0.75rem;}
         .user-avatar { width: 2.5rem; height: 2.5rem; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color);}
-        .user-info { display: flex; flex-direction: column; align-items: flex-start;}
         .user-info .user-name { font-weight: 600; font-size: 0.9rem; }
         .user-info .user-level { font-size: 0.8rem; color: var(--text-light); }
         .logout-btn { background: var(--color-blue-50); color: var(--color-blue-600); padding: 0.6rem; border-radius: 50%; line-height:0;}
@@ -1497,7 +1566,7 @@ const App = () => {
         .welcome-section p { color: var(--text-secondary); font-size: 1.15rem; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 1.5rem; }
         .stat-card { background: var(--bg-card); padding: 1.5rem; border-radius: 10px; display: flex; align-items: center; gap: 1rem; box-shadow: var(--shadow-md); }
-        .stat-card .stat-icon { color: var(--color-blue-500); width: 2rem; height: 2rem; }
+        .stat-card .stat-icon { color: var(--color-blue-500); }
         .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; }
         .stat-card .stat-label { font-size: 0.9rem; color: var(--text-light); }
         .team-card { background: linear-gradient(135deg, var(--color-blue-500) 0%, var(--color-purple-500) 100%); color:white; padding: 2rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-lg); }
@@ -1513,8 +1582,7 @@ const App = () => {
         .recommended-module-card .module-icon { width: 2.5rem; height:2.5rem; margin-bottom:0.75rem;}
         .recommended-module-card h3 { font-size:1.3rem; margin-bottom:0.5rem;}
         .recommended-module-card p { font-size:0.95rem; color: var(--text-secondary); margin-bottom:1rem;}
-        .recommended-module-card .start-btn.small { padding: 0.6rem 1rem; font-size:0.9rem; margin-top:auto; display:inline-flex; align-items:center; gap:0.3rem; background:var(--color-blue-500); color:white; border-radius:6px; font-weight:500;}
-        .recommended-module-card .start-btn.small:hover { background:var(--color-blue-600); }
+        .recommended-module-card .start-btn.small { padding: 0.6rem 1rem; font-size:0.9rem; margin-top:auto;}
         .modules-section .module-category-section { margin-bottom: 2.5rem; }
         .modules-section .category-title { font-size: 1.75rem; font-weight: 600; margin-bottom: 1.5rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border-color); color: var(--text-primary); }
         .modules-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 2rem; }
@@ -1536,7 +1604,6 @@ const App = () => {
         .module-card .progress-fill { height: 100%; transition: width 0.3s ease-in-out; }
         .module-card .progress-text { font-size: 0.85rem; color: var(--text-light); }
         .module-card .start-btn { width: 100%; padding: 0.8rem 1.2rem; background: var(--color-blue-500); color: white; border-radius: 8px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size:0.95rem; }
-        .module-card .start-btn .icon { margin-left: 0.25rem; }
         .module-card .start-btn:hover { background: var(--color-blue-600); }
 
         .module-view-header { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-md); margin-bottom:2rem;}
@@ -1560,7 +1627,6 @@ const App = () => {
         .lesson-item .lesson-content h3 { font-size: 1.15rem; font-weight: 600; margin-bottom: 0.25rem; }
         .lesson-item .lesson-type-badge { font-size: 0.8rem; color: var(--text-light); background-color: #f1f3f5; padding:0.2rem 0.5rem; border-radius:4px; display:inline-block;}
         .lesson-item .lesson-btn { padding: 0.6rem 1rem; background: var(--color-blue-500); color: white; border-radius: 6px; display: flex; align-items: center; gap: 0.4rem; font-size:0.9rem; margin-left:auto;}
-        .lesson-item .lesson-btn .icon-small { margin-left:0.2rem;}
         .lesson-item .lesson-btn:hover:not(:disabled) { background: var(--color-blue-600); }
         .lesson-item.locked .lesson-btn { background: #adb5bd; }
 
@@ -1576,7 +1642,6 @@ const App = () => {
         .lesson-content-view .content-area p { margin-bottom: 1.25rem; }
         .lesson-content-view .content-area strong { font-weight:600; color: var(--text-primary);}
         .lesson-content-view .complete-lesson-btn { display: inline-flex; align-items:center; gap:0.5rem; padding: 0.9rem 2rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; }
-        .lesson-content-view .complete-lesson-btn .icon-small { margin-left:0.3rem; }
         .lesson-content-view .complete-lesson-btn:hover { background: var(--color-green-600); }
 
         .quiz-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
@@ -1598,7 +1663,7 @@ const App = () => {
         .option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-blue-500); color: white; }
         .option-btn.correct .option-letter { background: var(--color-green-500); color: white; }
         .option-btn.incorrect .option-letter { background: var(--color-red-500); color: white; }
-        .explanation-box { margin-top: 1.5rem; padding: 1rem; background-color: var(--color-blue-50); border-radius: 8px; border: 1px solid var(--color-blue-100); color: var(--text-secondary); font-size: 0.95rem; text-align: left; }
+        .explanation-box { margin-top: 1.5rem; padding: 1rem; background-color: var(--color-blue-50); border-radius: 8px; border: 1px solid var(--color-blue-100); color: var(--text-secondary); font-size: 0.95rem; }
         .explanation-box strong { color: var(--text-primary); }
         .quiz-view .submit-btn { display: block; width: auto; min-width:200px; margin:1.5rem auto 0; padding: 1rem 2.5rem; background: var(--color-blue-500); color: white; border-radius: 8px; font-size: 1.05rem; font-weight: 600; }
         .quiz-view .submit-btn:hover:not(:disabled) { background: var(--color-blue-600); }
@@ -1612,8 +1677,6 @@ const App = () => {
         .quiz-result .xp-earned {color: var(--color-green-600); font-weight:600;}
         .quiz-result .result-actions { display: flex; gap: 1.5rem; justify-content: center; margin-top: 2rem; }
         .quiz-result .retry-btn, .quiz-result .continue-btn { padding: 0.8rem 1.8rem; border-radius: 8px; font-weight: 600; font-size: 0.95rem; display:inline-flex; align-items:center; gap:0.5rem;}
-        .quiz-result .retry-btn .icon-small { margin-right:0.3rem; }
-        .quiz-result .continue-btn .icon-small { margin-left:0.3rem; }
         .quiz-result .retry-btn { background: #f1f3f5; color: var(--text-primary); border: 1px solid var(--border-color); }
         .quiz-result .retry-btn:hover { background: #e9ecef; }
         .quiz-result .continue-btn { background: var(--color-blue-500); color: white; }
@@ -1630,7 +1693,7 @@ const App = () => {
         
         .teams-view .current-team-card { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .current-team-card .team-card-main { display:flex; align-items:flex-start; gap:2rem; margin-bottom:2rem;}
-        .team-avatar-icon { width:4rem; height:4rem; flex-shrink:0; color: var(--color-blue-500); }
+        .team-avatar-icon { width:4rem; height:4rem; flex-shrink:0; }
         .current-team-card h2 { font-size:1.8rem; font-weight:700; margin-bottom:0.5rem;}
         .team-description-small { font-size:1rem; color: var(--text-secondary); margin-bottom:0.75rem;}
         .current-team-card p {font-size:1rem; color:var(--text-secondary); margin-bottom:0.3rem;}
@@ -1638,9 +1701,6 @@ const App = () => {
         .leave-team-btn { padding: 0.8rem 1.5rem; background: var(--color-red-100); color: var(--color-red-600); border:1px solid var(--color-red-500); border-radius: 8px; font-weight: 600; }
         .leave-team-btn:hover { background: var(--color-red-500); color:white; }
         .no-team-actions { display:grid; grid-template-columns:1fr; gap:2.5rem; max-width:700px; margin:0 auto;}
-        @media (min-width: 768px) { 
-          .no-team-actions { grid-template-columns: 1fr auto 1fr; align-items:center; }
-        }
         .team-action-card { background:var(--bg-card); padding:2rem; border-radius:10px; box-shadow:var(--shadow-md); text-align:center;}
         .team-action-card h3 {font-size:1.4rem; font-weight:600; margin-bottom:0.5rem;}
         .team-action-card p {font-size:1rem; color:var(--text-secondary); margin-bottom:1.5rem;}
@@ -1648,12 +1708,9 @@ const App = () => {
         .input-group input {flex-grow:1;}
         .input-group button { padding: 0.75rem 1.5rem; background: var(--color-blue-500); color:white; border-radius:6px; font-weight:500;}
         .input-group button:hover:not(:disabled) {background: var(--color-blue-600);}
-        .divider-or {text-align:center; font-weight:500; color:var(--text-light); position:relative; margin: 1rem 0;}
+        .divider-or {text-align:center; font-weight:500; color:var(--text-light); position:relative;}
         .divider-or::before, .divider-or::after {content:''; display:block; width:40%; height:1px; background:var(--border-color); position:absolute; top:50%;}
         .divider-or::before {left:0;} .divider-or::after {right:0;}
-        @media (max-width: 767px) { 
-          .divider-or::before, .divider-or::after { width:0; } 
-        }
         
         .browse-teams-view .search-bar-container { display: flex; align-items: center; margin-bottom: 2.5rem; background: var(--bg-card); padding: 0.6rem 1.2rem; border-radius: 8px; box-shadow: var(--shadow-md); }
         .browse-teams-view .search-icon { color: #9ca3af; margin-right: 0.8rem; width:1.25rem; height:1.25rem;}
@@ -1687,12 +1744,12 @@ const App = () => {
         .challenge-idle-content { text-align:center; padding: 2rem 0;}
         .challenge-arena-icon { width: 100px; height: 100px; margin: 0 auto 1.5rem; border-radius: 12px; }
         .challenge-idle-content h2 { font-size: 1.8rem; color: var(--text-primary); margin-bottom: 0.75rem; }
-        .challenge-idle-content p { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem; max-width:600px; margin-left:auto; margin-right:auto;}
+        .challenge-idle-content p { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem; }
         .challenge-action-btn { padding: 0.8rem 1.5rem; border-radius:8px; font-size:1rem; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:0.6rem; border:1px solid transparent; line-height: 1.2;}
         .start-challenge-btn { background-color: var(--color-purple-500); color:white; padding: 1rem 2.5rem; font-size:1.1rem; font-weight:600;}
         .start-challenge-btn:hover:not(:disabled) { background-color: var(--color-purple-600); }
 
-        .active-challenge .challenge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color); flex-wrap: wrap; gap: 0.5rem; }
+        .active-challenge .challenge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color); }
         .active-challenge .challenge-header h2 { font-size:1.4rem; font-weight:600; color:var(--text-primary); }
         .challenge-timer { font-size:1rem; font-weight:500; color:var(--text-secondary); display:flex; align-items:center; gap:0.4rem; }
         .timer-critical { color: var(--color-red-500); font-weight: bold; }
@@ -1700,23 +1757,23 @@ const App = () => {
 
         .challenge-question-card { padding: 1rem 0; }
         .challenge-question-card .question-category-tag { display:inline-block; background-color:var(--color-blue-100); color:var(--color-blue-600); padding:0.3rem 0.8rem; border-radius:12px; font-size:0.85rem; margin-bottom:1rem;}
-        .challenge-question-card h3 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; line-height: 1.4; color:var(--text-primary); text-align:center; }
+        .challenge-question-card h3 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; line-height: 1.4; color:var(--text-primary); }
         .challenge-options-list { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
         .challenge-option-btn { display: flex; align-items: center; gap: 1rem; padding: 1rem; background: white; border: 2px solid var(--border-color); border-radius: 8px; text-align: left; width:100%; font-size:1rem;}
         .challenge-option-btn:hover:not(:disabled) { border-color: var(--color-purple-100); background: var(--color-purple-50); }
         .challenge-option-btn.selected:not(.correct):not(.incorrect) { border-color: var(--color-purple-500); background: var(--color-purple-100); font-weight:500;}
         .challenge-option-btn.correct { background-color: var(--color-green-100); border-color: var(--color-green-500); color: var(--color-green-600); font-weight: bold; }
         .challenge-option-btn.incorrect { background-color: var(--color-red-100); border-color: var(--color-red-500); color: var(--color-red-600); }
-        .challenge-option-btn .option-letter { background: #e9ecef; }
+        .challenge-option-btn .option-letter { background: #e9ecef; } /* Neutral background for option letters */
         .challenge-option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-purple-500); color: white; }
         .challenge-option-btn.correct .option-letter { background: var(--color-green-500); color: white; }
         .challenge-option-btn.incorrect .option-letter { background: var(--color-red-500); color: white; }
 
-        .challenge-feedback { margin-top:1.5rem; padding:1rem; border-radius:8px; background-color: #f8f9fa; border: 1px solid var(--border-color); text-align: left;}
+        .challenge-feedback { margin-top:1.5rem; padding:1rem; border-radius:8px; }
         .challenge-feedback .feedback-correct { color:var(--color-green-600); font-weight:bold; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem; }
         .challenge-feedback .feedback-incorrect { color:var(--color-red-600); font-weight:bold; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;}
         .challenge-feedback .explanation-text { font-size:0.9rem; color:var(--text-secondary); margin-bottom:1rem; }
-        .next-question-btn { background-color: var(--color-blue-500); color:white; margin-top:1rem; display:block; margin-left:auto; margin-right:auto; }
+        .next-question-btn { background-color: var(--color-blue-500); color:white; margin-top:1rem; }
         .next-question-btn:hover:not(:disabled) { background-color: var(--color-blue-600); }
 
         .challenge-results .results-summary { text-align:center; padding:2rem 0; font-size:1.2rem; color:var(--text-secondary);}
@@ -1727,6 +1784,7 @@ const App = () => {
         .back-dashboard-btn { background-color:#6c757d; color:white; border-color:#5a6268;}
         .back-dashboard-btn:hover { background-color:#5a6268;}
 
+        /* Challenge Configuration Styles */
         .challenge-config {
           margin: 1.5rem auto 2rem;
           max-width: 550px;
@@ -1761,14 +1819,14 @@ const App = () => {
         .config-item select:focus,
         .config-item input[type="number"]:focus {
             border-color: var(--color-purple-500);
-            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); 
+            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); /* Using purple for focus consistent with challenge theme */
             outline: none;
         }
         .category-checkboxes {
           display: flex;
           flex-wrap: wrap;
           gap: 0.8rem;
-          justify-content: flex-start; 
+          justify-content: flex-start; /* Align items to the start */
         }
         .category-checkbox-item {
           display: flex;
@@ -1780,7 +1838,7 @@ const App = () => {
           border: 1px solid #ced4da;
           font-size: 0.9rem;
           cursor: pointer;
-          transition: border-color 0.2s, background-color 0.2s;
+          transition: border-color 0.2s;
         }
         .category-checkbox-item:hover {
             border-color: var(--color-purple-300);
@@ -1788,20 +1846,17 @@ const App = () => {
         .category-checkbox-item input[type="checkbox"] {
           width: 1rem;
           height: 1rem;
-          accent-color: var(--color-purple-500); 
+          accent-color: var(--color-purple-500); /* Match checkbox color to purple theme */
           cursor: pointer;
-        }
-        .category-checkbox-item input[type="checkbox"]:checked + label {
-            color: var(--color-purple-600);
-            font-weight: 500;
         }
         .category-checkbox-item label {
             cursor: pointer;
-            font-weight: normal; 
+            font-weight: normal; /* Keep label text normal weight */
             color: var(--text-secondary);
-            transition: color 0.2s;
         }
 
+
+        /* Responsive Adjustments */
         @media (max-width: 1024px) {
             .nav-items { gap: 0.5rem; }
             .nav-item { padding: 0.6rem 0.8rem; font-size:0.9rem;}
@@ -1847,7 +1902,7 @@ const App = () => {
             .current-team-card .team-card-main {flex-direction:column; align-items:center; text-align:center; gap:1rem;}
             .team-avatar-icon {margin-bottom:0.5rem;}
             .challenge-question-card h3 { font-size:1.2rem; }
-            .category-checkboxes { justify-content: center; }
+            .category-checkboxes { justify-content: center; } /* Center checkboxes on small screens if they wrap */
         }
       `}</style>
     </>
