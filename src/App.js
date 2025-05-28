@@ -1,11 +1,25 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
-import { jwtDecode } from 'jwt-decode';
+// import { jwtDecode } from 'jwt-decode'; // Not strictly needed if relying on Firebase Auth user object primarily
 import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2 } from 'lucide-react';
 
+// Firebase imports
+import { auth, db } from './Firebase'; // Assuming Firebase.js is in src folder and exports auth, db
+import { GoogleAuthProvider as FirebaseGoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import {
+  doc, getDoc, setDoc, updateDoc, writeBatch,
+  collection, query, where, getDocs, addDoc, serverTimestamp,
+  increment, arrayUnion, arrayRemove, orderBy, limit
+} from 'firebase/firestore';
+
+// Console logs to check imported Firebase services
+console.log("[App.js] Value of 'auth' imported from ./Firebase.js:", auth);
+console.log("[App.js] Value of 'db' imported from ./Firebase.js:", db);
+
 const App = () => {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState(null); // Will store Firestore profile
+  const [loading, setLoading] = useState(true); // For initial app load
+  const [actionLoading, setActionLoading] = useState(false); // For specific actions
   const [message, setMessage] = useState('');
   const [currentView, setCurrentView] = useState('login');
   const [selectedModule, setSelectedModule] = useState(null);
@@ -17,9 +31,9 @@ const App = () => {
 
   const [joinTeamCodeInput, setJoinTeamCodeInput] = useState('');
   const [createTeamNameInput, setCreateTeamNameInput] = useState('');
+  const [allTeams, setAllTeams] = useState([]);
 
-  // VEXpert Knowledge Challenge State
-  const [challengeState, setChallengeState] = useState('idle'); // idle, active, results
+  const [challengeState, setChallengeState] = useState('idle');
   const [challengeQuestions, setChallengeQuestions] = useState([]);
   const [currentChallengeQuestionIdx, setCurrentChallengeQuestionIdx] = useState(0);
   const [challengeScore, setChallengeScore] = useState(0);
@@ -28,21 +42,17 @@ const App = () => {
   const [challengeTimer, setChallengeTimer] = useState(20);
 
   const CHALLENGE_MAX_XP = 100;
-  const QUESTIONS_PER_CHALLENGE = 5; // Default number of questions
+  const QUESTIONS_PER_CHALLENGE = 5;
   const QUESTION_TIMER_DURATION = 20;
 
-  // New states for challenge configuration
   const [numChallengeQuestionsInput, setNumChallengeQuestionsInput] = useState(QUESTIONS_PER_CHALLENGE);
   const [availableChallengeCategories, setAvailableChallengeCategories] = useState([]);
   const [selectedChallengeCategories, setSelectedChallengeCategories] = useState([]);
 
-
-  const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '790863202922-eq2qsu2bmljrirmtj8n5080821qgr56p.apps.googleusercontent.com';
+  const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
   const XP_PER_LEVEL = 500;
 
-  const initialSampleTeams = useMemo(() => [], []);
-  const [allTeams, setAllTeams] = useState(initialSampleTeams);
-
+  // Learning content (remains client-side, could be moved to Firestore)
   const learningModules = useMemo(() => [
     {
       id: 'intro-vex',
@@ -196,22 +206,169 @@ const App = () => {
   ], []);
 
 
-  useEffect(() => {
-    // Simulate initial loading if needed, or remove if not necessary
-    // For example, if you were fetching initial user data:
-    // const checkUserSession = async () => {
-    //   // ... your logic to check session ...
-    //   setLoading(false);
-    // };
-    // checkUserSession();
-    setLoading(false); // Assuming no async check on initial load for this example
+  // --- Firebase Data Fetching Callbacks ---
+  const fetchUserProfile = useCallback(async (firebaseUserId) => {
+    console.log("Attempting to fetch user profile for Firebase UID:", firebaseUserId);
+    if (!db) {
+      console.error("[fetchUserProfile] Firestore 'db' instance is not available. Firebase might not be initialized correctly.");
+      return null;
+    }
+    try {
+      const userDocRef = doc(db, "users", firebaseUserId);
+      const userSnap = await getDoc(userDocRef);
+      if (userSnap.exists()) {
+        console.log("Profile found in Firestore for Firebase UID:", firebaseUserId, userSnap.data());
+        return { id: userSnap.id, ...userSnap.data() };
+      }
+      console.log("No profile in Firestore for Firebase UID:", firebaseUserId);
+      return null;
+    } catch (error) {
+      console.error("Error in fetchUserProfile for Firebase UID:", firebaseUserId, error);
+      return null;
+    }
+  }, []); // `db` dependency removed as it's from module scope, assuming it's stable after init.
+
+  const fetchUserProgress = useCallback(async (firebaseUserId) => {
+    console.log("Attempting to fetch user progress for Firebase UID:", firebaseUserId);
+    if (!db) {
+      console.error("[fetchUserProgress] Firestore 'db' instance is not available.");
+      return;
+    }
+    try {
+      const progressColRef = collection(db, `users/${firebaseUserId}/progress`);
+      const progressSnap = await getDocs(progressColRef);
+      const loadedProgress = {};
+      progressSnap.forEach((docSnap) => {
+        loadedProgress[docSnap.id] = docSnap.data();
+      });
+      setUserProgress(loadedProgress);
+      console.log("User progress fetched for Firebase UID:", firebaseUserId, loadedProgress);
+    } catch (error) {
+      console.error("Error in fetchUserProgress for Firebase UID:", firebaseUserId, error);
+    }
   }, []);
+
+  const fetchUserTeam = useCallback(async (teamId) => {
+    console.log("Attempting to fetch team with ID:", teamId);
+    if (!teamId) { setUserTeam(null); console.log("No teamId provided to fetchUserTeam."); return null; }
+    if (!db) { console.error("[fetchUserTeam] Firestore 'db' instance is not available."); return null; }
+    
+    try {
+      const teamDocRef = doc(db, "teams", teamId);
+      const teamSnap = await getDoc(teamDocRef);
+      if (teamSnap.exists()) {
+        const teamData = { id: teamSnap.id, ...teamSnap.data() };
+        setUserTeam(teamData);
+        console.log("Team data fetched:", teamData);
+        return teamData;
+      } else {
+        setUserTeam(null);
+        console.warn("Team document not found for ID:", teamId);
+        if (user && user.id) {
+          console.log("Attempting to clear dangling teamId from user profile:", user.id);
+          const userRef = doc(db, "users", user.id);
+          await updateDoc(userRef, { teamId: null });
+          console.log("Dangling teamId cleared from user profile.");
+        }
+        return null;
+      }
+    } catch (error) {
+      console.error("Error in fetchUserTeam for team ID:", teamId, error);
+      setUserTeam(null);
+      return null;
+    }
+  }, [user]);
+
+
+  // --- Auth State Listener (Primary source of truth for auth state) ---
+  useEffect(() => {
+    console.log("App.js: Auth listener effect is running.");
+    if (!auth) {
+      console.error("App.js: Firebase 'auth' service is not available in onAuthStateChanged. Firebase might not be initialized correctly in Firebase.js or imported incorrectly.");
+      setLoading(false); // Stop loading, but app will likely be broken.
+      setMessage("Critical Firebase Error: Auth service not loaded. Please check console and Firebase.js configuration.");
+      return; // Exit if auth is not available
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseAuthUser) => {
+      console.log("App.js: onAuthStateChanged triggered. Firebase Auth User:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
+      try {
+        if (firebaseAuthUser) {
+          console.log("App.js: Firebase Auth User signed in. UID:", firebaseAuthUser.uid);
+          let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
+
+          if (!userProfile) {
+            console.log("App.js: No Firestore profile for UID:", firebaseAuthUser.uid, ". Creating new profile.");
+            const newUserProfileData = {
+              id: firebaseAuthUser.uid,
+              name: firebaseAuthUser.displayName || `User${Math.floor(Math.random() * 10000)}`,
+              email: firebaseAuthUser.email,
+              avatar: firebaseAuthUser.photoURL || `https://source.boringavatars.com/beam/120/${firebaseAuthUser.email || firebaseAuthUser.uid}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`,
+              xp: 0, level: 1, streak: 0, teamId: null,
+              createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
+            };
+            if (!db) { console.error("App.js: Firestore 'db' instance is not available for creating profile."); throw new Error("Firestore not available");}
+            await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
+            userProfile = newUserProfileData;
+            console.log("App.js: New Firestore profile created for UID:", firebaseAuthUser.uid);
+          } else {
+            console.log("App.js: Existing Firestore profile found for UID:", firebaseAuthUser.uid, ". Updating profile.");
+            const profileUpdates = { lastLogin: serverTimestamp() };
+            if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) profileUpdates.name = firebaseAuthUser.displayName;
+            if (firebaseAuthUser.photoURL && firebaseAuthUser.photoURL !== userProfile.avatar) profileUpdates.avatar = firebaseAuthUser.photoURL;
+            
+            if (Object.keys(profileUpdates).length > 0) { // Only update if there are changes
+                if (!db) { console.error("App.js: Firestore 'db' instance is not available for updating profile."); throw new Error("Firestore not available");}
+                await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
+            }
+            userProfile = { ...userProfile, ...profileUpdates };
+            console.log("App.js: Firestore profile updated for UID:", firebaseAuthUser.uid);
+          }
+
+          setUser(userProfile);
+          console.log("App.js: User state (Firestore profile) set. Fetching progress for UID:", firebaseAuthUser.uid);
+          await fetchUserProgress(firebaseAuthUser.uid);
+
+          if (userProfile.teamId) {
+            console.log("App.js: User has teamId:", userProfile.teamId, ". Fetching team data.");
+            await fetchUserTeam(userProfile.teamId);
+          } else {
+            setUserTeam(null);
+            console.log("App.js: User has no teamId.");
+          }
+          setCurrentView(prevView => (prevView === 'login' || !prevView) ? 'dashboard' : prevView);
+          console.log("App.js: User setup complete.");
+
+        } else {
+          console.log("App.js: No Firebase Auth User signed in. Resetting user state.");
+          setUser(null); setUserTeam(null); setUserProgress({});
+          setCurrentView('login');
+          setSelectedModule(null); setCurrentLesson(null);
+        }
+      } catch (error) {
+        console.error("App.js: CRITICAL ERROR within onAuthStateChanged async block:", error);
+        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
+        setMessage("An error occurred handling authentication. Please check console and try again.");
+      } finally {
+        console.log("App.js: onAuthStateChanged finally block. setLoading(false).");
+        setLoading(false);
+      }
+    });
+
+    return () => {
+      console.log("App.js: Auth listener cleaning up.");
+      unsubscribe();
+    };
+  }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]);
+
 
   useEffect(() => {
     const categories = [...new Set(vexpertChallengeBank.map(q => q.category))].sort();
     setAvailableChallengeCategories(categories);
-    setSelectedChallengeCategories(categories);
-  }, [vexpertChallengeBank]);
+    if (categories.length > 0 && selectedChallengeCategories.length === 0) {
+        setSelectedChallengeCategories(categories);
+    }
+  }, [vexpertChallengeBank, selectedChallengeCategories.length]);
 
 
   useEffect(() => {
@@ -221,136 +378,99 @@ const App = () => {
         setChallengeTimer(prevTime => prevTime - 1);
       }, 1000);
     } else if (challengeState === 'active' && challengeTimer === 0 && !showChallengeAnswer) {
-      handleChallengeAnswer(null); // Auto-submit if timer runs out
+      handleChallengeAnswer(null);
     }
     return () => clearInterval(interval);
-  }, [challengeState, challengeTimer, showChallengeAnswer]); // Added handleChallengeAnswer to dependencies
+  }, [challengeState, challengeTimer, showChallengeAnswer]);
 
 
   const handleLoginSuccess = async (credentialResponse) => {
-    setMessage('Login successful! Setting up your profile...'); setLoading(true);
+    console.log("App.js: Google Login Button Success. Credential Token (start):", credentialResponse.credential ? credentialResponse.credential.substring(0,30)+"..." : "N/A");
+    if (!auth) {
+        console.error("App.js: FATAL in handleLoginSuccess - Firebase 'auth' service is not available!");
+        setMessage("Critical Firebase Error: Auth service not loaded. Cannot process login.");
+        setActionLoading(false);
+        return;
+    }
+    setMessage('Processing Firebase sign-in...');
+    setActionLoading(true);
     try {
-      let googleUserName = `User${Math.floor(Math.random() * 10000)}`;
-      let googleUserEmail = `${googleUserName.toLowerCase()}@vexcel.app`;
-      let googleUserAvatar = `https://source.boringavatars.com/beam/120/${googleUserEmail}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`;
-
-      if (credentialResponse.credential) {
-        try {
-          const decodedToken = jwtDecode(credentialResponse.credential);
-          if (decodedToken.name) {
-            googleUserName = decodedToken.name;
-          }
-          if (decodedToken.email) {
-            googleUserEmail = decodedToken.email;
-          }
-          if (decodedToken.picture) {
-            googleUserAvatar = decodedToken.picture;
-          }
-        } catch (e) {
-          console.error("Error decoding JWT: ", e);
-          // Potentially set a user-facing error message here
-        }
-      }
-
-      // Simulate backend verification
-      const backendResponse = await simulateBackendVerification(
-        credentialResponse.credential,
-        googleUserName,
-        googleUserEmail,
-        googleUserAvatar
-      );
-
-      if (backendResponse.success) {
-        setUser(backendResponse.user);
-        setUserTeam(backendResponse.team);
-        setUserProgress(backendResponse.progress || {});
-        setMessage(`Welcome to Vexcel, ${backendResponse.user.name}!`);
-        setCurrentView('dashboard');
-      } else {
-        setMessage('Login verification failed: ' + backendResponse.error);
-        googleLogout(); // Ensure logout on failure
-      }
+      const idToken = credentialResponse.credential;
+      const credential = FirebaseGoogleAuthProvider.credential(idToken);
+      console.log("App.js: Attempting Firebase signInWithCredential...");
+      const firebaseAuthResult = await signInWithCredential(auth, credential);
+      console.log("App.js: Firebase signInWithCredential successful. Firebase User UID:", firebaseAuthResult.user.uid);
+      // onAuthStateChanged will now handle the rest: fetching/creating profile, setting state, navigation.
+      setMessage(`Successfully signed in with Firebase as ${firebaseAuthResult.user.displayName || firebaseAuthResult.user.email}!`);
     } catch (error) {
-      console.error("Login Error:", error);
-      setMessage('Error during login verification. Please try again.');
-      googleLogout(); // Ensure logout on error
+      console.error("App.js: Error in handleLoginSuccess (Firebase signInWithCredential):", error);
+      // Check for specific Firebase error codes if needed
+      if (error.code === 'auth/configuration-not-found') {
+          setMessage(`Firebase Config Error: ${error.message}. Please ensure Firebase is correctly configured with your project details in Firebase.js.`);
+      } else {
+          setMessage(`Firebase sign-in error: ${error.message}. Please try again.`);
+      }
+      googleLogout();
     } finally {
-      setLoading(false);
+      console.log("App.js: handleLoginSuccess finally block. setActionLoading(false).");
+      setActionLoading(false);
     }
   };
 
+
   const handleLoginError = (error) => {
-    console.error("Google Login Error:", error);
+    console.error("App.js: Google Login Button Error (@react-oauth/google):", error);
     setMessage('Google login failed. Please ensure pop-ups are enabled and try again.');
-    setLoading(false);
+    setActionLoading(false);
   };
 
-  const handleLogout = () => {
-    googleLogout();
-    setUser(null); setUserTeam(null); setUserProgress({});
-    setSelectedModule(null); setCurrentLesson(null);
-    setJoinTeamCodeInput(''); setCreateTeamNameInput('');
-    setChallengeState('idle');
-    setCurrentView('login'); // Navigate to login view after logout
-    setMessage('You have been logged out successfully.');
-    setLoading(false);
-  };
-
-  // Simulates a backend call to verify the token and fetch/create user data
-  const simulateBackendVerification = async (idToken, name, email, avatarUrl) => {
-    // In a real app, this would be an API call:
-    // const response = await fetch('/api/auth/google', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({ token: idToken, name, email, avatarUrl }),
-    // });
-    // return await response.json();
-
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        if (idToken) { // Basic check, real verification is more complex
-          const mockUser = {
-            id: `user_${Date.now()}`, // Or a persistent ID from your backend
-            name: name,
-            email: email,
-            avatar: avatarUrl,
-            xp: 0, level: 1, streak: 0
-            // ... other user details from your backend
-          };
-          // Simulate fetching team and progress
-          resolve({ success: true, user: mockUser, team: null, progress: {} });
-        } else {
-          resolve({ success: false, error: 'No ID token provided.' });
-        }
-      }, 1000);
-    });
+  const handleLogout = async () => {
+    console.log("App.js: handleLogout called.");
+    if (!auth) {
+        console.error("App.js: FATAL in handleLogout - Firebase 'auth' service is not available!");
+        setMessage("Critical Firebase Error: Auth service not loaded. Cannot process logout.");
+        // Manually reset state as a fallback
+        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
+        return;
+    }
+    setActionLoading(true);
+    try {
+      await firebaseSignOut(auth); // Triggers onAuthStateChanged
+      googleLogout();
+      console.log("App.js: Firebase sign out and Google logout successful.");
+      setMessage('You have been logged out successfully.');
+    } catch (error) {
+      console.error("App.js: Error during logout:", error);
+      setMessage('Error during logout.');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const navigate = (view, data = null) => {
-    setMessage(''); // Clear previous messages on navigation
+    setMessage('');
     setCurrentView(view);
     if (data) {
       if (view === 'module') {
-        const moduleData = learningModules.find(m => m.id === (data.id || data)); // Handle both object and ID
+        const moduleData = learningModules.find(m => m.id === (data.id || data));
         setSelectedModule(moduleData);
-        setCurrentLesson(null); // Reset lesson when navigating to a module overview
+        setCurrentLesson(null);
       } else if (view === 'lessonContent' && data.lesson && data.moduleId) {
         const moduleForLesson = learningModules.find(m => m.id === data.moduleId);
         if (moduleForLesson) {
-            setSelectedModule(moduleForLesson); // Ensure module context is set
+            setSelectedModule(moduleForLesson);
             setCurrentLesson(data.lesson);
         } else {
             setMessage("Error: Module context for lesson not found.");
-            setCurrentView('dashboard'); // Fallback
+            setCurrentView('dashboard');
         }
       } else if (view === 'quiz') setQuizData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
       else if (view === 'game') setGameData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
     } else {
-      // Reset contextual data if navigating to a view that doesn't need it
       if (!['module', 'lessonContent', 'quiz', 'game', 'challenge'].includes(view)) {
         setSelectedModule(null); setCurrentLesson(null); setQuizData(null); setGameData(null);
       }
-      if(view === 'challenge') { // Reset challenge state when navigating to challenge hub
+      if(view === 'challenge') {
         setChallengeState('idle');
         setChallengeScore(0);
         setCurrentChallengeQuestionIdx(0);
@@ -360,175 +480,261 @@ const App = () => {
     }
   };
 
-  // Auto-clear messages after a delay
   useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 5000); return () => clearTimeout(t); } }, [message]);
 
-  // Handle Level Up
-  useEffect(() => { if (user && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) { const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1; setUser(prev => ({ ...prev, level: newLevel })); setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`); } }, [user?.xp, user?.level]);
-
-
-  const handleCompleteItem = (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
-    setUserProgress(prev => {
-      const moduleProg = prev[moduleId] || { lessons: {}, moduleXp: 0 };
-      const updatedLessons = { ...moduleProg.lessons, [lessonId]: { completed: true, score: score } };
-      return { ...prev, [moduleId]: { ...moduleProg, lessons: updatedLessons, moduleXp: (moduleProg.moduleXp || 0) + xpEarned } };
-    });
-    setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
-
-    if (userTeam) { // Update team XP if user is in a team
-        const updatedTeamXP = (userTeam.totalXP || 0) + xpEarned;
-        setUserTeam(prevTeam => ({...prevTeam, totalXP: updatedTeamXP}));
-        // Also update the team in the global `allTeams` list for leaderboards etc.
-        setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? {...t, totalXP: updatedTeamXP} : t));
+  useEffect(() => {
+    if (user && user.xp !== undefined && user.level !== undefined && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) {
+      const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1;
+      setUser(prev => ({ ...prev, level: newLevel }));
+      setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`);
+      if(user.id && db) {
+          const userRef = doc(db, "users", user.id);
+          updateDoc(userRef, { level: newLevel })
+            .then(() => console.log("App.js: Level updated in Firestore for UID:", user.id))
+            .catch(err => console.error("App.js: Error updating level in Firestore:", err));
+      } else if (!db) {
+          console.error("App.js: Cannot update level in Firestore, 'db' instance is not available.");
+      }
     }
+  }, [user, XP_PER_LEVEL]);
 
-    // Force re-render of module view if the completed item was in the currently selected module
-    if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
 
-    setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
+  const handleCompleteItem = async (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
+    if (!user || !user.id) {setMessage("Error: User not identified."); console.error("App.js: handleCompleteItem - User not identified."); return;}
+    if (!db) {setMessage("Error: Database service unavailable."); console.error("App.js: handleCompleteItem - DB not available."); return;}
+
+    console.log(`App.js: handleCompleteItem called for UID: ${user.id}, moduleId: ${moduleId}, lessonId: ${lessonId}, xp: ${xpEarned}`);
+    setActionLoading(true);
+    const userRef = doc(db, "users", user.id);
+    const progressDocRef = doc(db, `users/${user.id}/progress`, moduleId);
+
+    try {
+      const batch = writeBatch(db);
+      batch.update(userRef, { xp: increment(xpEarned) });
+      const sanitizedLessonId = lessonId.replace(/\./g, '_');
+      const currentModuleProgSnap = await getDoc(progressDocRef);
+      let currentModuleXp = 0;
+      let existingLessons = {};
+      if (currentModuleProgSnap.exists()) {
+          const currentData = currentModuleProgSnap.data();
+          currentModuleXp = currentData.moduleXp || 0;
+          existingLessons = currentData.lessons || {};
+      }
+      const updatedLessonData = { ...existingLessons, [sanitizedLessonId]: { completed: true, score: score } };
+      batch.set(progressDocRef, { lessons: updatedLessonData, moduleXp: currentModuleXp + xpEarned }, { merge: true });
+      if (userTeam && userTeam.id) {
+        const teamRef = doc(db, "teams", userTeam.id);
+        batch.update(teamRef, { totalXP: increment(xpEarned) });
+      }
+      await batch.commit();
+      console.log("App.js: Item completion saved to Firebase.");
+      setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
+      setUserProgress(prev => ({ ...prev, [moduleId]: { ...prev[moduleId] || {lessons:{}, moduleXp:0}, lessons: updatedLessonData, moduleXp: (prev[moduleId]?.moduleXp || 0) + xpEarned }}));
+      if (userTeam) {
+        const updatedTeamTotalXP = (userTeam.totalXP || 0) + xpEarned;
+        setUserTeam(prevTeam => ({ ...prevTeam, totalXP: updatedTeamTotalXP }));
+        setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? { ...t, totalXP: updatedTeamTotalXP } : t));
+      }
+      if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
+      setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
+    } catch (error) {
+      console.error("App.js: Error completing item in Firebase:", error);
+      setMessage("Failed to save progress. Please try again.");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
-  const handleJoinTeam = async (teamCodeToJoin = joinTeamCodeInput) => {
-    if (!teamCodeToJoin.trim()) { setMessage("Please enter or select a team code."); return; }
-    if (userTeam) { setMessage("You are already in a team. Leave your current team first to join another."); return; }
-    setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
-    const teamToJoin = allTeams.find(t => t.code === teamCodeToJoin.trim());
-    if (teamToJoin) {
-      setUserTeam(teamToJoin);
-      setAllTeams(prevTeams => prevTeams.map(t => t.id === teamToJoin.id ? { ...t, members: (t.members || 0) + 1 } : t));
-      setMessage(`Successfully joined team: ${teamToJoin.name}!`); setJoinTeamCodeInput('');
-    } else { setMessage("Invalid team code or team not found."); }
-    setLoading(false);
+  const handleJoinTeam = async (teamCodeToJoinArg = joinTeamCodeInput) => {
+    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput;
+    if (!teamCodeToJoin.trim()) { setMessage("Please enter a team code."); return; }
+    if (userTeam) { setMessage("You are already in a team."); return; }
+    if (!user || !user.id) { setMessage("User not logged in."); return; }
+    if (!db) { setMessage("Database service unavailable."); return; }
+
+    console.log("App.js: handleJoinTeam called with code:", teamCodeToJoin, "for user:", user.id);
+    setActionLoading(true);
+    try {
+      const teamsQuery = query(collection(db, "teams"), where("code", "==", teamCodeToJoin.trim()));
+      const querySnapshot = await getDocs(teamsQuery);
+      if (querySnapshot.empty) {
+        setMessage("Invalid team code or team not found."); setActionLoading(false); return;
+      }
+      const teamDocSnap = querySnapshot.docs[0];
+      const teamToJoinData = { id: teamDocSnap.id, ...teamDocSnap.data() };
+      if (teamToJoinData.memberIds && teamToJoinData.memberIds.includes(user.id)) {
+          setMessage(`You are already a member of ${teamToJoinData.name}.`); setUserTeam(teamToJoinData);
+          const userRefForConsistency = doc(db, "users", user.id); await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
+          setActionLoading(false); return;
+      }
+      const batch = writeBatch(db);
+      const teamRef = doc(db, "teams", teamToJoinData.id);
+      batch.update(teamRef, { memberIds: arrayUnion(user.id) });
+      const userRef = doc(db, "users", user.id);
+      batch.update(userRef, { teamId: teamToJoinData.id });
+      await batch.commit();
+      const updatedTeamSnap = await getDoc(teamRef);
+      const finalTeamData = {id: updatedTeamSnap.id, ...updatedTeamSnap.data()};
+      setUserTeam(finalTeamData);
+      setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t));
+      setMessage(`Successfully joined team: ${finalTeamData.name}!`); setJoinTeamCodeInput('');
+    } catch (error) {
+      console.error("App.js: Error joining team:", error); setMessage("Failed to join team.");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleCreateTeam = async () => {
-    if (!createTeamNameInput.trim()) { setMessage("Please enter a valid team name."); return; }
-    if (userTeam) { setMessage("You are already in a team. Leave your current team first to create a new one."); return; }
-    setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
-    const newTeamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    const newTeam = {
-      id: `team_${Date.now()}`, name: createTeamNameInput.trim(), code: newTeamCode,
-      members: 1, rank: 0, // Rank might be calculated dynamically
-      totalXP: user ? user.xp : 0, // Initialize team XP with creator's XP
-      description: `A brand new Vexcel team led by ${user ? user.name : 'a Vexcel user'}!`
-    };
-    setUserTeam(newTeam);
-    setAllTeams(prev => [...prev, newTeam]);
-    setMessage(`Team "${newTeam.name}" created! Share this code with others: ${newTeam.code}`); setCreateTeamNameInput('');
-    setLoading(false);
+    if (!createTeamNameInput.trim()) { setMessage("Please enter a team name."); return; }
+    if (userTeam) { setMessage("You are already in a team."); return; }
+    if (!user || !user.id) { setMessage("User not logged in."); return; }
+    if (!db) {setMessage("Database service unavailable."); return;}
+
+    console.log("App.js: handleCreateTeam called with name:", createTeamNameInput, "for user:", user.id);
+    setActionLoading(true);
+    try {
+      const newTeamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      const newTeamData = {
+        name: createTeamNameInput.trim(), code: newTeamCode,
+        description: `A brand new Vexcel team led by ${user.name}!`,
+        totalXP: user.xp || 0, memberIds: [user.id], creatorId: user.id,
+        createdAt: serverTimestamp(),
+      };
+      const teamColRef = collection(db, "teams");
+      const teamDocRef = await addDoc(teamColRef, newTeamData);
+      const userRef = doc(db, "users", user.id);
+      await updateDoc(userRef, { teamId: teamDocRef.id });
+      const createdTeamForState = { id: teamDocRef.id, ...newTeamData, members: 1 };
+      setUserTeam(createdTeamForState);
+      setAllTeams(prev => [...prev, createdTeamForState]);
+      setMessage(`Team "${createdTeamForState.name}" created! Code: ${newTeamCode}`); setCreateTeamNameInput('');
+    } catch (error) {
+      console.error("App.js: Error creating team:", error); setMessage("Failed to create team.");
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   const handleLeaveTeam = async () => {
-    if (!userTeam) return; setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
-    const teamName = userTeam.name;
-    // Update allTeams: decrement member count, potentially remove if becomes empty (optional)
-    setAllTeams(prevTeams => prevTeams.map(t => t.id === userTeam.id ? { ...t, members: Math.max(0, (t.members || 1) - 1) } : t)
-                                     .filter(t => t.members > 0 || t.id !== userTeam.id) // Example: remove if 0 members and it's the team being left
-    );
-    setUserTeam(null);
-    setMessage(`You have left team: ${teamName}.`);
-    setLoading(false);
+    if (!userTeam || !userTeam.id || !user || !user.id) return;
+    if (!db) {setMessage("Database service unavailable."); return;}
+    console.log("App.js: handleLeaveTeam called for team:", userTeam.id, "by user:", user.id);
+    setActionLoading(true);
+    try {
+      const teamName = userTeam.name;
+      const batch = writeBatch(db);
+      const teamRef = doc(db, "teams", userTeam.id);
+      batch.update(teamRef, { memberIds: arrayRemove(user.id) });
+      const userRef = doc(db, "users", user.id);
+      batch.update(userRef, { teamId: null });
+      await batch.commit();
+      setUserTeam(null);
+      setAllTeams(prevTeams => prevTeams.map(t => (t.id === userTeam.id ? { ...t, memberIds: t.memberIds?.filter(id => id !== user.id), members: (t.memberIds?.filter(id => id !== user.id).length || 0) } : t)));
+      setMessage(`You have left team: ${teamName}.`);
+    } catch (error) {
+      console.error("App.js: Error leaving team:", error); setMessage("Failed to leave team.");
+    } finally {
+      setActionLoading(false);
+    }
   };
+
+  const fetchAllTeamsForBrowse = useCallback(async () => {
+    console.log("App.js: fetchAllTeamsForBrowse called. Current view:", currentView);
+    if (!db) { console.error("App.js: fetchAllTeamsForBrowse - DB not available."); return; }
+    if (currentView === 'browseTeams' || currentView === 'leaderboard') {
+      setActionLoading(true);
+      try {
+        const teamsColRef = collection(db, "teams");
+        let q = teamsColRef;
+        if (currentView === 'leaderboard') q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50));
+        const querySnapshot = await getDocs(q);
+        const loadedTeams = querySnapshot.docs.map(docSnap => ({ id: docSnap.id, ...docSnap.data(), members: docSnap.data().memberIds?.length || 0 }));
+        setAllTeams(loadedTeams);
+        console.log("App.js: Teams fetched:", loadedTeams.length);
+      } catch (error) {
+        console.error("App.js: Error fetching teams:", error); setMessage("Could not load teams.");
+      } finally {
+        setActionLoading(false);
+      }
+    }
+  }, [currentView]); // db removed from dep array as it's from module scope
+
+  useEffect(() => {
+    fetchAllTeamsForBrowse();
+  }, [fetchAllTeamsForBrowse]);
 
 
   const startVexpertChallenge = () => {
-    setLoading(true);
-
-    if (selectedChallengeCategories.length === 0) {
-      setMessage("Please select at least one category to start the challenge.");
-      setChallengeState('idle');
-      setLoading(false);
-      return;
-    }
-
-    const filteredByCategories = vexpertChallengeBank.filter(q =>
-      selectedChallengeCategories.includes(q.category)
-    );
-
-    if (filteredByCategories.length === 0) {
-        setMessage("No questions available for the selected categories. Please select different or more categories.");
-        setChallengeState('idle');
-        setLoading(false);
-        return;
-    }
-
-    let questionsToAskCount = numChallengeQuestionsInput;
-    if (numChallengeQuestionsInput > filteredByCategories.length) {
-        setMessage(`Only ${filteredByCategories.length} questions available for selected settings. Reducing question count to ${filteredByCategories.length}.`);
-        questionsToAskCount = filteredByCategories.length;
-    }
-    if (questionsToAskCount <= 0) {
-        setMessage("Cannot start challenge with 0 questions. Adjust settings.");
-        setChallengeState('idle');
-        setLoading(false);
-        return;
-    }
-
-    // Shuffle and pick questions
-    const shuffledQuestions = [...filteredByCategories].sort(() => 0.5 - Math.random());
-    setChallengeQuestions(shuffledQuestions.slice(0, questionsToAskCount));
-    setCurrentChallengeQuestionIdx(0);
-    setChallengeScore(0);
-    setChallengeSelectedAnswer(null);
-    setShowChallengeAnswer(false);
-    setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer for the first question
-    setChallengeState('active');
-    setLoading(false);
-    setMessage(`Challenge started with ${questionsToAskCount} questions! Good luck!`);
+    console.log("App.js: startVexpertChallenge called.");
+    setActionLoading(true);
+    // ... (rest of the logic is fine) ...
+    if (selectedChallengeCategories.length === 0) {setMessage("Please select at least one category."); setActionLoading(false); return;}
+    const filtered = vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category));
+    if (filtered.length === 0) {setMessage("No questions for selected categories."); setActionLoading(false); return;}
+    let count = numChallengeQuestionsInput;
+    if (count > filtered.length) { setMessage(`Only ${filtered.length} questions available. Reducing count.`); count = filtered.length;}
+    if (count <= 0) {setMessage("Cannot start with 0 questions."); setActionLoading(false); return;}
+    const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+    setChallengeQuestions(shuffled.slice(0, count));
+    setCurrentChallengeQuestionIdx(0); setChallengeScore(0); setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
+    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false);
+    setMessage(`Challenge started with ${count} questions!`);
   };
 
 
   const handleChallengeAnswer = (selectedIndex) => {
-    if (showChallengeAnswer) return; // Prevent multiple submissions
-
-    setShowChallengeAnswer(true);
-    setChallengeSelectedAnswer(selectedIndex);
-    const currentQuestion = challengeQuestions[currentChallengeQuestionIdx];
-    if (selectedIndex === currentQuestion.correctAnswerIndex) {
-      setChallengeScore(prevScore => prevScore + 1);
+    if (showChallengeAnswer) return;
+    setShowChallengeAnswer(true); setChallengeSelectedAnswer(selectedIndex);
+    if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
+      setChallengeScore(s => s + 1);
     }
-    // Timer is cleared by useEffect when showChallengeAnswer becomes true
   };
 
-  const handleNextChallengeQuestion = () => {
-    setShowChallengeAnswer(false);
-    setChallengeSelectedAnswer(null);
-
+  const handleNextChallengeQuestion = async () => {
+    setShowChallengeAnswer(false); setChallengeSelectedAnswer(null);
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
-      setCurrentChallengeQuestionIdx(prevIdx => prevIdx + 1);
-      setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer for next question
+      setCurrentChallengeQuestionIdx(i => i + 1); setChallengeTimer(QUESTION_TIMER_DURATION);
     } else {
-      // Challenge finished
       setChallengeState('results');
-      const xpEarned = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
-      setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
-      if (userTeam) { // Update team XP
-          const updatedTeamXP = (userTeam.totalXP || 0) + xpEarned;
-          setUserTeam(prevTeam => ({...prevTeam, totalXP: updatedTeamXP}));
-          setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? {...t, totalXP: updatedTeamXP} : t));
+      const xp = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
+      console.log("App.js: Challenge finished. Score:", challengeScore, "XP:", xp);
+      if (user && user.id && xp > 0 && db) {
+        setActionLoading(true);
+        try {
+          const batch = writeBatch(db);
+          const userRef = doc(db, "users", user.id);
+          batch.update(userRef, { xp: increment(xp) });
+          if (userTeam && userTeam.id) batch.update(doc(db, "teams", userTeam.id), { totalXP: increment(xp) });
+          await batch.commit();
+          setUser(prev => ({ ...prev, xp: (prev.xp || 0) + xp }));
+          if (userTeam) {
+            const newTeamXp = (userTeam.totalXP || 0) + xp;
+            setUserTeam(prev => ({ ...prev, totalXP: newTeamXp }));
+            setAllTeams(prevs => prevs.map(t => t.id === userTeam.id ? { ...t, totalXP: newTeamXp } : t));
+          }
+          setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}. +${xp} XP!`);
+        } catch (e) { console.error("App.js: Error saving challenge XP:", e); setMessage("Error saving XP."); }
+        finally { setActionLoading(false); }
+      } else if (xp === 0) {
+        setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}.`);
+      } else if(!db) {
+        setMessage("DB error. Challenge XP not saved.");
       }
-      setMessage(`Challenge finished! You scored ${challengeScore}/${challengeQuestions.length}. +${xpEarned} XP!`);
     }
   };
 
-  // Reset challenge to initial config screen
   const resetChallenge = () => {
-    setChallengeState('idle');
-    setChallengeQuestions([]);
-    setCurrentChallengeQuestionIdx(0);
-    setChallengeScore(0);
-    setChallengeSelectedAnswer(null);
-    setShowChallengeAnswer(false);
-    // Keep numChallengeQuestionsInput and selectedChallengeCategories as they were for user convenience
+    setChallengeState('idle'); setChallengeQuestions([]);
+    setCurrentChallengeQuestionIdx(0); setChallengeScore(0);
+    setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
+    console.log("App.js: Challenge reset.");
   };
 
 
-  // --- Sub-components ---
-
-  const Navigation = () => (
-    <nav className="nav">
+  // --- Sub-components (JSX remains largely the same) ---
+  const Navigation = () => ( /* ... existing JSX ... */ <nav className="nav">
       <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
-        {/* Replace with your actual logo if you have one */}
         <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
         <span className="brand-text">Vexcel</span>
       </div>
@@ -541,35 +747,26 @@ const App = () => {
           <button className={`nav-item ${currentView === 'challenge' ? 'active' : ''}`} onClick={() => navigate('challenge')}><Puzzle className="icon" />Challenge</button>
           <div className="nav-user">
             <img src={user.avatar} alt={user.name} className="user-avatar" onError={(e)=>e.target.src='https://source.boringavatars.com/beam/120/default?colors=264653,2a9d8f,e9c46a,f4a261,e76f51'}/>
-            <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">Lvl {user.level} ({user.xp} XP)</span></div>
-            <button onClick={handleLogout} className="logout-btn" title="Logout"><LogOut size={18}/></button>
+            <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">Lvl {user.level} ({user.xp || 0} XP)</span></div>
+            <button onClick={handleLogout} className="logout-btn" title="Logout" disabled={actionLoading}><LogOut size={18}/></button>
           </div>
         </div>
       )}
     </nav>
   );
-
-  const Dashboard = () => {
-    if (!user) return null; // Should not happen if navigation guards are correct
-
-    // Determine modules in progress
+  const Dashboard = () => { /* ... existing JSX ... */ if (!user) return null;
     const modulesInProgress = learningModules.filter(m => {
         const prog = userProgress[m.id];
         return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
     });
-
-    // Determine recommended next module: first in progress, or first not started/completed
     const recommendedNextModule = modulesInProgress.length > 0 ? modulesInProgress[0] : learningModules.find(m => !userProgress[m.id] || Object.keys(userProgress[m.id].lessons).length === 0);
-
-    // Group modules by category for display
     const categorizedModules = learningModules.reduce((acc, module) => {
-        const category = module.category || 'General'; // Default category
+        const category = module.category || 'General';
         if (!acc[category]) acc[category] = [];
         acc[category].push(module);
         return acc;
     }, {});
-    const categoryOrder = ['Hardware', 'Software', 'CAD', 'General']; // Desired display order
-
+    const categoryOrder = ['Hardware', 'Software', 'CAD', 'General'];
 
     return (
     <div className="dashboard">
@@ -579,31 +776,28 @@ const App = () => {
           <p>Ready to tackle new VEX challenges today?</p>
         </div>
         <div className="stats-grid">
-          <div className="stat-card"><Award className="stat-icon" /><div><span className="stat-value">{user.xp}</span><span className="stat-label">Total XP</span></div></div>
+          <div className="stat-card"><Award className="stat-icon" /><div><span className="stat-value">{user.xp || 0}</span><span className="stat-label">Total XP</span></div></div>
           <div className="stat-card"><Target className="stat-icon" /><div><span className="stat-value">{user.level}</span><span className="stat-label">Level</span></div></div>
           <div className="stat-card"><Zap className="stat-icon" /><div><span className="stat-value">{user.streak}</span><span className="stat-label">Day Streak</span></div></div>
         </div>
       </div>
-
       {userTeam && (
         <div className="team-card">
-          <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{userTeam.members} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
-          <div className="team-stats"><span className="team-xp">{userTeam.totalXP.toLocaleString()} XP</span></div>
+          <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
+          <div className="team-stats"><span className="team-xp">{(userTeam.totalXP || 0).toLocaleString()} XP</span></div>
         </div>
       )}
-
       {recommendedNextModule && (
           <div className="recommended-module-card" onClick={() => navigate('module', recommendedNextModule)}>
               <div className="recommended-tag">Recommended Next</div>
               <recommendedNextModule.icon className="module-icon" style={{color: `var(--color-${recommendedNextModule.color}-500)`}}/>
               <h3>{recommendedNextModule.title}</h3>
               <p>{recommendedNextModule.description.substring(0,100)}...</p>
-              <button className="start-btn small">
+              <button className="start-btn small" disabled={actionLoading}>
                   {userProgress[recommendedNextModule.id] && Object.keys(userProgress[recommendedNextModule.id].lessons).length > 0 ? 'Continue Module' : 'Start Module'} <ChevronRight className="icon-small"/>
               </button>
           </div>
       )}
-
       <div className="modules-section">
         {categoryOrder.map(category => {
             if (!categorizedModules[category] || categorizedModules[category].length === 0) return null;
@@ -622,9 +816,9 @@ const App = () => {
                             <h3>{module.title}</h3> <p>{module.description}</p>
                             <div className="progress-section">
                             <div className="progress-bar"><div className="progress-fill" style={{ width: `${progressPercent}%` }}></div></div>
-                            <span className="progress-text">{completedCount}/{module.lessons} items ({prog.moduleXp} XP)</span>
+                            <span className="progress-text">{completedCount}/{module.lessons} items ({(prog.moduleXp || 0)} XP)</span>
                             </div>
-                            <button className="start-btn"> {progressPercent === 100 ? 'Review Module' : progressPercent > 0 ? 'Continue Learning' : 'Start Learning'} <ChevronRight className="icon" /> </button>
+                            <button className="start-btn" disabled={actionLoading}> {progressPercent === 100 ? 'Review Module' : progressPercent > 0 ? 'Continue Learning' : 'Start Learning'} <ChevronRight className="icon" /> </button>
                         </div>
                         );
                     })}
@@ -635,15 +829,13 @@ const App = () => {
         </div>
     </div>
   )};
-
-  const ModuleView = () => {
-    if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
+  const ModuleView = () => { /* ... existing JSX ... */ if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
     const Icon = selectedModule.icon;
     return (
       <div className="module-view">
         <div className="module-view-header">
-          <button onClick={() => navigate('dashboard')} className="back-btn"><ChevronRight className="icon rotated" /> Back to Dashboard</button>
+          <button onClick={() => navigate('dashboard')} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to Dashboard</button>
           <div className="module-title-section">
             <Icon className="module-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}} />
             <div>
@@ -655,17 +847,15 @@ const App = () => {
         </div>
         <div className="lessons-list">
           {selectedModule.content.lessons.map((lesson, index) => {
-            const lessonState = moduleProg.lessons[lesson.id] || { completed: false };
+            const lessonState = moduleProg.lessons[lesson.id.replace(/\./g, '_')] || { completed: false };
             const isCompleted = lessonState.completed;
-            // A lesson is locked if it's not the first one AND the previous one isn't completed.
-            const isLocked = index > 0 && !(moduleProg.lessons[selectedModule.content.lessons[index - 1].id]?.completed);
-
+            const prevLessonSanitizedId = index > 0 ? selectedModule.content.lessons[index - 1].id.replace(/\./g, '_') : null;
+            const isLocked = index > 0 && !(moduleProg.lessons[prevLessonSanitizedId]?.completed);
             const LessonIcon = lesson.type === 'quiz' ? Puzzle : lesson.type === 'game' ? Play : MessageSquare;
-
             return (
               <div key={lesson.id} className={`lesson-item ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
                 onClick={() => {
-                  if (isLocked && !isCompleted) return; // Don't navigate if locked (unless already completed for review)
+                  if (actionLoading || (isLocked && !isCompleted)) return;
                   if (lesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson });
                   else if (lesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson });
                   else if (lesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson });
@@ -673,7 +863,7 @@ const App = () => {
                 <div className="lesson-number">{isCompleted ? <Check className="icon-small" /> : index + 1}</div>
                 <LessonIcon className="lesson-type-icon" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
                 <div className="lesson-content"> <h3>{lesson.title}</h3> <span className="lesson-type-badge">{lesson.type} (+{lesson.xp} XP)</span> </div>
-                <button className="lesson-btn" disabled={isLocked && !isCompleted}> {isCompleted ? 'Review' : (isLocked ? 'Locked' : 'Start')} <ChevronRight className="icon-small" /> </button>
+                <button className="lesson-btn" disabled={actionLoading || (isLocked && !isCompleted)}> {isCompleted ? 'Review' : (isLocked ? 'Locked' : 'Start')} <ChevronRight className="icon-small" /> </button>
               </div>
             );
           })}
@@ -681,99 +871,77 @@ const App = () => {
       </div>
     );
   };
-
-  const LessonContentView = () => {
-    if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
+  const LessonContentView = () => { /* ... existing JSX ... */ if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
-    const lessonState = moduleProg.lessons[currentLesson.id] || { completed: false };
+    const lessonState = moduleProg.lessons[currentLesson.id.replace(/\./g, '_')] || { completed: false };
     const isCompleted = lessonState.completed;
 
     const handleMarkCompleteAndContinue = () => {
-      if (!isCompleted) handleCompleteItem(selectedModule.id, currentLesson.id, currentLesson.type, null, currentLesson.xp);
-
-      // Navigate to the next item in the module
+      if (actionLoading) return;
+      const sanitizedLessonId = currentLesson.id.replace(/\./g, '_');
+      if (!isCompleted) handleCompleteItem(selectedModule.id, sanitizedLessonId, currentLesson.type, null, currentLesson.xp);
       const currentIndex = selectedModule.content.lessons.findIndex(l => l.id === currentLesson.id);
       const nextLesson = selectedModule.content.lessons[currentIndex + 1];
-
       if (nextLesson) {
-        // Check if the next lesson would be locked if this one wasn't just completed
-        // This logic might need refinement based on how `isCompleted` updates immediately
-        const nextLessonProg = moduleProg.lessons[nextLesson.id] || { completed: false };
-        const isNextLocked = !(moduleProg.lessons[currentLesson.id]?.completed || isCompleted) && !nextLessonProg.completed;
-
-
-        if (isNextLocked && !isCompleted) { // If current wasn't completed and next is locked, go back to module
-             navigate('module', { id: selectedModule.id });
-             return;
-        }
-
+        const nextLessonProg = moduleProg.lessons[nextLesson.id.replace(/\./g, '_')] || { completed: false };
+        const isNextLocked = !(moduleProg.lessons[sanitizedLessonId]?.completed || isCompleted) && !nextLessonProg.completed;
+        if (isNextLocked && !isCompleted) { navigate('module', { id: selectedModule.id }); return; }
         if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
-        else navigate('module', { id: selectedModule.id }); // Fallback if type is unknown
-      } else navigate('module', { id: selectedModule.id }); // No next lesson, back to module
+        else navigate('module', { id: selectedModule.id });
+      } else navigate('module', { id: selectedModule.id });
     };
 
     return (
       <div className="lesson-content-view">
-        <button onClick={() => navigate('module', {id: selectedModule.id})} className="back-btn"><ChevronRight className="icon rotated" /> Back to {selectedModule.title}</button>
+        <button onClick={() => navigate('module', {id: selectedModule.id})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to {selectedModule.title}</button>
         <div className="lesson-title-header">
             <MessageSquare className="lesson-type-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
             <h2>{currentLesson.title}</h2>
         </div>
         <div className="content-area" dangerouslySetInnerHTML={{ __html: currentLesson.contentDetail || "<p>No detailed content available for this lesson.</p>" }} />
-        <button onClick={handleMarkCompleteAndContinue} className="complete-lesson-btn">
+        <button onClick={handleMarkCompleteAndContinue} className="complete-lesson-btn" disabled={actionLoading}>
           {isCompleted ? 'Continue to Next Item' : `Mark as Complete & Continue (+${currentLesson.xp} XP)`}
           <ChevronRight className="icon-small"/>
         </button>
       </div>
     );
   };
-
-  const QuizView = () => {
-    const [currentQIdx, setCurrentQIdx] = useState(0);
+  const QuizView = () => { /* ... existing JSX ... */ const [currentQIdx, setCurrentQIdx] = useState(0);
     const [selectedAns, setSelectedAns] = useState(null);
-    const [showRes, setShowRes] = useState(false); // Show quiz results page
+    const [showRes, setShowRes] = useState(false);
     const [quizScore, setQuizScore] = useState(0);
-    const [showExplanation, setShowExplanation] = useState(false); // Show explanation for current question
-
+    const [showExplanation, setShowExplanation] = useState(false);
 
     if (!quizData || !quizData.lessonId) return <p className="error-message">Loading quiz...</p>;
-    const quizContent = sampleQuizzes[quizData.lessonId];
+    const sanitizedLessonId = quizData.lessonId.replace(/\./g, '_');
+    const quizContent = sampleQuizzes[sanitizedLessonId];
     if (!quizContent) return <p className="error-message">Quiz content not found for: {quizData.lessonId}</p>;
 
-    const handleAnsSelect = (idx) => {
-        if (showExplanation) return; // Don't allow changing answer after submitting
-        setSelectedAns(idx);
-    }
+    const handleAnsSelect = (idx) => { if (showExplanation || actionLoading) return; setSelectedAns(idx); }
     const handleSubmitAnswer = () => {
-      if (selectedAns === null) return; // Must select an answer
+      if (selectedAns === null || actionLoading) return;
       setShowExplanation(true);
       const q = quizContent.questions[currentQIdx];
-      if (selectedAns === q.correct) {
-        setQuizScore(s => s + 1);
-      }
+      if (selectedAns === q.correct) { setQuizScore(s => s + 1); }
     };
-
     const handleNextQ = () => {
-      setShowExplanation(false);
-      setSelectedAns(null);
+      if (actionLoading) return;
+      setShowExplanation(false); setSelectedAns(null);
       if (currentQIdx + 1 < quizContent.questions.length) {
         setCurrentQIdx(i => i + 1);
       } else {
-        // Quiz finished, show results
         setShowRes(true);
-        const finalScore = quizScore; // Use the score accumulated up to this point
-        const passPercent = 70; // Example passing percentage
-        const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[quizData.lesson.id] || {};
-
-        // Award XP only if not previously completed and passed
+        const finalScore = quizScore; // Use captured score for this attempt
+        const passPercent = 70;
+        const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
         if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
-          handleCompleteItem(quizData.moduleId, quizData.lesson.id, 'quiz', finalScore, quizData.lesson.xp);
+          handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalScore, quizData.lesson.xp);
         } else if (currentModuleProgress.completed) {
             setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
         }
-        else { // Failed to pass
+        else {
             setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
         }
       }
@@ -783,17 +951,18 @@ const App = () => {
     if (showRes) {
       const perc = Math.round((quizScore / quizContent.questions.length) * 100);
       const passed = perc >= 70;
+      const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
       return (
         <div className="quiz-result">
           <div className={`result-icon ${passed ? 'success' : 'fail'}`}>{passed ? <Check /> : <X />}</div>
           <h2>{passed ? 'Excellent Work!' : 'Keep Practicing!'}</h2>
           <p>Your score: {quizScore}/{quizContent.questions.length} ({perc}%)</p>
-          {passed && !userProgress[quizData.moduleId]?.lessons[quizData.lesson.id]?.completed && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
-          {passed && userProgress[quizData.moduleId]?.lessons[quizData.lesson.id]?.completed && <p className="xp-earned">XP previously earned for this quiz.</p>}
+          {passed && !currentModuleProgress.completed && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
+          {passed && currentModuleProgress.completed && <p className="xp-earned">XP previously earned for this quiz.</p>}
           {!passed && <p>You need 70% to pass and earn XP for this quiz.</p>}
           <div className="result-actions">
-            <button onClick={resetQuiz} className="retry-btn"><RotateCcw className="icon-small"/> Try Again</button>
-            <button onClick={() => navigate('module', {id: quizData.moduleId})} className="continue-btn">Back to Module <ChevronRight className="icon-small"/></button>
+            <button onClick={resetQuiz} className="retry-btn" disabled={actionLoading}><RotateCcw className="icon-small"/> Try Again</button>
+            <button onClick={() => navigate('module', {id: quizData.moduleId})} className="continue-btn" disabled={actionLoading}>Back to Module <ChevronRight className="icon-small"/></button>
           </div>
         </div>
       );
@@ -801,7 +970,7 @@ const App = () => {
     const q = quizContent.questions[currentQIdx];
     return (
       <div className="quiz-view">
-        <button onClick={() => navigate('module', {id: quizData.moduleId})} className="back-btn"><ChevronRight className="icon rotated"/> Back to Module</button>
+        <button onClick={() => navigate('module', {id: quizData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
         <div className="quiz-header-info">
             <Puzzle className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
             <h2>{quizContent.title}</h2>
@@ -815,7 +984,7 @@ const App = () => {
                     key={i}
                     className={`option-btn ${selectedAns === i ? 'selected' : ''} ${showExplanation && q.correct === i ? 'correct' : ''} ${showExplanation && selectedAns === i && q.correct !== i ? 'incorrect' : ''}`}
                     onClick={() => handleAnsSelect(i)}
-                    disabled={showExplanation}>
+                    disabled={showExplanation || actionLoading}>
                     <span className="option-letter">{String.fromCharCode(65+i)}</span>{opt}
                 </button>
             )}
@@ -825,104 +994,107 @@ const App = () => {
               <strong>Explanation:</strong> {q.explanation}
             </div>
           )}
-          {!showExplanation && <button className="submit-btn" disabled={selectedAns === null} onClick={handleSubmitAnswer}>Submit Answer</button>}
-          {showExplanation && <button className="submit-btn" onClick={handleNextQ}>{currentQIdx + 1 === quizContent.questions.length ? 'Finish Quiz' : 'Next Question'}</button>}
+          {!showExplanation && <button className="submit-btn" disabled={selectedAns === null || actionLoading} onClick={handleSubmitAnswer}>Submit Answer</button>}
+          {showExplanation && <button className="submit-btn" onClick={handleNextQ} disabled={actionLoading}>{currentQIdx + 1 === quizContent.questions.length ? 'Finish Quiz' : 'Next Question'}</button>}
         </div>
       </div>
     );
   };
-
-  const GameView = () => {
-    if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
-    const gameContent = sampleGames[gameData.lessonId];
+  const GameView = () => { /* ... existing JSX ... */ if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
+    const sanitizedLessonId = gameData.lessonId.replace(/\./g, '_');
+    const gameContent = sampleGames[sanitizedLessonId];
     if (!gameContent) return <p className="error-message">Game content not found for: {gameData.lessonId}</p>;
 
     const handleCompleteGame = () => {
-      const isAlreadyCompleted = userProgress[gameData.moduleId]?.lessons[gameData.lesson.id]?.completed;
+      if (actionLoading) return;
+      const isAlreadyCompleted = userProgress[gameData.moduleId]?.lessons[sanitizedLessonId]?.completed;
       if (!isAlreadyCompleted) {
-        handleCompleteItem(gameData.moduleId, gameData.lesson.id, 'game', null, gameContent.xp || 30);
+        handleCompleteItem(gameData.moduleId, sanitizedLessonId, 'game', null, gameContent.xp || 30);
         setMessage(`Challenge "${gameContent.title}" completed! +${gameContent.xp || 30} XP`);
       } else {
         setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
       }
-      navigate('module', {id: gameData.moduleId}); // Navigate back to module view
+      navigate('module', {id: gameData.moduleId});
     };
 
     return (
       <div className="game-view">
-        <button onClick={() => navigate('module', {id: gameData.moduleId})} className="back-btn"><ChevronRight className="icon rotated"/> Back to Module</button>
+        <button onClick={() => navigate('module', {id: gameData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
         <div className="game-header-info">
             <Play className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
             <h2>{gameContent.title}</h2>
         </div>
         <div className="game-container">
           <p className="game-instructions">{gameContent.instructions}</p>
-          {/* Placeholder for actual game content or simulation */}
           <div className="game-placeholder">Simulated Game Area / Conceptual Challenge</div>
-          <button onClick={handleCompleteGame} className="complete-game-btn">Complete Challenge</button>
+          <button onClick={handleCompleteGame} className="complete-game-btn" disabled={actionLoading}>Complete Challenge</button>
         </div>
       </div>
     );
   };
-
-  const TeamsView = () => (
+  const TeamsView = () => { /* ... existing JSX ... */ return (
     <div className="teams-view">
       <div className="view-header"> <Users className="header-icon" /> <h1>My Team</h1> <p>Manage your team or join/create a new one.</p> </div>
       {userTeam ? (
         <div className="current-team-card">
           <div className="team-card-main">
-            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/> {/* Default color if team.color undefined */}
+            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/>
             <div>
                 <h2>{userTeam.name}</h2>
                 <p className="team-description-small">{userTeam.description}</p>
                 <p><strong>Team Code:</strong> <code className="team-code-display">{userTeam.code}</code> (Share this!)</p>
-                <p>{userTeam.members} members • Rank #{userTeam.rank || 'N/A'} • {userTeam.totalXP.toLocaleString()} Total XP</p>
+                <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • {(userTeam.totalXP || 0).toLocaleString()} Total XP</p>
             </div>
           </div>
-          <button className="leave-team-btn" onClick={handleLeaveTeam} disabled={loading}>{loading ? 'Leaving...' : 'Leave Team'}</button>
+          <button className="leave-team-btn" onClick={handleLeaveTeam} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Leave Team'}</button>
         </div>
       ) : (
         <div className="no-team-actions">
           <div className="team-action-card">
             <h3>Join an Existing Team</h3> <p>Enter the code shared by a team leader.</p>
             <div className="input-group">
-              <input type="text" placeholder="Enter team code" value={joinTeamCodeInput} onChange={(e) => setJoinTeamCodeInput(e.target.value.toUpperCase())} disabled={loading} />
-              <button onClick={() => handleJoinTeam()} disabled={loading || !joinTeamCodeInput}>{loading ? 'Joining...' : 'Join Team'}</button>
+              <input type="text" placeholder="Enter team code" value={joinTeamCodeInput} onChange={(e) => setJoinTeamCodeInput(e.target.value.toUpperCase())} disabled={actionLoading} />
+              <button onClick={() => handleJoinTeam()} disabled={actionLoading || !joinTeamCodeInput}>{actionLoading ? 'Processing...' : 'Join Team'}</button>
             </div>
           </div>
           <div className="divider-or">OR</div>
           <div className="team-action-card">
             <h3>Create a New Team</h3> <p>Start your own Vexcel squad!</p>
             <div className="input-group">
-              <input type="text" placeholder="Enter new team name" value={createTeamNameInput} onChange={(e) => setCreateTeamNameInput(e.target.value)} disabled={loading} />
-              <button onClick={handleCreateTeam} disabled={loading || !createTeamNameInput}>{loading ? 'Creating...' : 'Create Team'}</button>
+              <input type="text" placeholder="Enter new team name" value={createTeamNameInput} onChange={(e) => setCreateTeamNameInput(e.target.value)} disabled={actionLoading} />
+              <button onClick={handleCreateTeam} disabled={actionLoading || !createTeamNameInput}>{actionLoading ? 'Processing...' : 'Create Team'}</button>
             </div>
           </div>
         </div>
       )}
     </div>
   );
-
-  const BrowseTeamsView = () => {
-    const [searchTerm, setSearchTerm] = useState('');
-    // Filter and sort teams for display
+  };
+  const BrowseTeamsView = () => { /* ... existing JSX ... */ const [searchTerm, setSearchTerm] = useState('');
     const filteredAndSortedTeams = useMemo(() =>
         allTeams
-            .filter(team => // Case-insensitive search
+            .filter(team =>
                 team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 team.code.toLowerCase().includes(searchTerm.toLowerCase())
             )
-            .sort((a,b) => b.totalXP - a.totalXP), // Sort by XP descending
+            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)),
         [allTeams, searchTerm]
     );
+
+    useEffect(() => {
+        if (currentView === 'browseTeams' && allTeams.length === 0) { // Fetch only if needed and not already loaded
+            fetchAllTeamsForBrowse();
+        }
+    }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
+
 
     return (
       <div className="browse-teams-view">
         <div className="view-header"> <Eye className="header-icon" /> <h1>Browse All Teams</h1> <p>Find a team, see who's competing, or get inspired!</p> </div>
         <div className="search-bar-container"> <Search className="search-icon" /> <input type="text" placeholder="Search by name, description, or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="teams-search-input" /> </div>
-        {loading && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
-        {allTeams.length === 0 && !loading ? (
+        {actionLoading && allTeams.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
+        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? (
           <p className="info-message">No teams exist yet. Go to "My Team" to create one!</p>
         ) : filteredAndSortedTeams.length > 0 ? (
           <div className="teams-grid">
@@ -931,45 +1103,47 @@ const App = () => {
                 <div className="team-card-header"><h3>{team.name}</h3><span className="team-code-badge">CODE: {team.code}</span></div>
                 <p className="team-description">{team.description || "No description available."}</p>
                 <div className="team-card-footer">
-                  <span><Users size={16} /> {team.members} Members</span> <span><Trophy size={16} /> {team.totalXP.toLocaleString()} XP</span>
-                  {/* Show Join button only if user is not in a team or not in THIS team */}
-                  {(!userTeam || userTeam.id !== team.id) && <button onClick={() => handleJoinTeam(team.code)} className="join-team-browse-btn" disabled={loading || !!userTeam}>{!!userTeam ? 'In a Team' : 'Join Team'}</button>}
+                  <span><Users size={16} /> {(team.memberIds ? team.memberIds.length : team.members) || 0} Members</span> <span><Trophy size={16} /> {(team.totalXP || 0).toLocaleString()} XP</span>
+                  {(!userTeam || userTeam.id !== team.id) && <button onClick={() => handleJoinTeam(team.code)} className="join-team-browse-btn" disabled={actionLoading || !!userTeam}>{!!userTeam ? 'In a Team' : (actionLoading ? 'Processing...' : 'Join Team')}</button>}
                   {userTeam && userTeam.id === team.id && <span className="current-team-indicator"><Check size={16}/> Your Team</span>}
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <p className="info-message">No teams match your search criteria.</p>
+          !actionLoading && <p className="info-message">No teams match your search criteria.</p>
         )}
       </div>
     );
   };
-
-  const LeaderboardView = () => {
-    // Sort teams by totalXP for leaderboard display
-    const sortedLeaderboard = useMemo(() =>
-        [...allTeams].sort((a, b) => b.totalXP - a.totalXP).map((team, index) => ({ ...team, rank: index + 1 })),
+  const LeaderboardView = () => { /* ... existing JSX ... */ const sortedLeaderboard = useMemo(() =>
+        [...allTeams].sort((a, b) => (b.totalXP || 0) - (a.totalXP || 0)).map((team, index) => ({ ...team, rank: index + 1 })),
         [allTeams]
     );
+
+    useEffect(() => {
+        if (currentView === 'leaderboard' && allTeams.length === 0) { // Fetch only if needed and not already loaded
+            fetchAllTeamsForBrowse();
+        }
+    }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
+
     return (
       <div className="leaderboard-view">
         <div className="view-header"> <Trophy className="header-icon" /> <h1>Global Team Leaderboard</h1> <p>See how teams stack up in the Vexcel universe!</p> </div>
+        {actionLoading && sortedLeaderboard.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading leaderboard...</p></div>}
         <div className="leaderboard-list">
-          {sortedLeaderboard.length > 0 ? sortedLeaderboard.map((team) => (
+          {!actionLoading && sortedLeaderboard.length > 0 ? sortedLeaderboard.map((team) => (
             <div key={team.id} className={`leaderboard-item ${userTeam && team.id === userTeam.id ? 'current-team' : ''}`}>
               <span className="rank-badge">#{team.rank}</span>
-              <div className="team-info"><h3>{team.name}</h3> <p>{team.members} members • Code: {team.code}</p></div>
-              <span className="team-xp">{team.totalXP.toLocaleString()} XP</span>
+              <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : team.members) || 0} members • Code: {team.code}</p></div>
+              <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
             </div>
-          )) : <p className="info-message">The leaderboard is currently empty. Create or join a team to get started!</p>}
+          )) : !actionLoading && <p className="info-message">The leaderboard is currently empty. Create or join a team to get started!</p>}
         </div>
       </div>
     );
   };
-
-  const VexpertChallengeView = () => {
-    if (loading && challengeState !== 'active') { // Show loader only if not already in an active challenge
+  const VexpertChallengeView = () => { /* ... existing JSX ... */ if (actionLoading && challengeState === 'idle') {
         return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
     }
 
@@ -984,7 +1158,6 @@ const App = () => {
           <div className="challenge-idle-content">
             <img src={`https://source.boringavatars.com/bauhaus/120/${user?.email || 'challenge-ready'}?colors=8B5CF6,A78BFA,EDE9FE,F3E8FF,C084FC`} alt="Challenge Icon" className="challenge-arena-icon"/>
             <h2>Ready to Test Your Expertise?</h2>
-
             <div className="challenge-config">
               <div className="config-item">
                 <label htmlFor="numQuestionsConfig">Number of Questions:</label>
@@ -992,11 +1165,11 @@ const App = () => {
                   id="numQuestionsConfig"
                   value={numChallengeQuestionsInput}
                   onChange={(e) => setNumChallengeQuestionsInput(Number(e.target.value))}
-                  disabled={loading}
+                  disabled={actionLoading}
                 >
                   {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
-                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) // Unique, valid counts
-                    .sort((a,b) => a-b) // Sort numerically
+                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0)
+                    .sort((a,b) => a-b)
                     .map(num => (
                       <option key={num} value={num}>
                         {num === vexpertChallengeBank.length ? `All (${vexpertChallengeBank.length})` : num}
@@ -1020,7 +1193,7 @@ const App = () => {
                             e.target.checked ? [...prev, cat] : prev.filter(c => c !== cat)
                           );
                         }}
-                        disabled={loading}
+                        disabled={actionLoading}
                       />
                       <label htmlFor={`cat-config-${category}`}>{category}</label>
                     </div>
@@ -1028,14 +1201,13 @@ const App = () => {
                 </div>
               </div>
             </div>
-
             <p>You'll face {numChallengeQuestionsInput} questions from selected categories. Each question is timed. Aim for accuracy and speed!</p>
             <button
               className="challenge-action-btn start-challenge-btn"
               onClick={startVexpertChallenge}
-              disabled={loading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0}
+              disabled={actionLoading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0}
             >
-              {loading ? 'Loading...' : `Start ${numChallengeQuestionsInput}-Question Challenge`}
+              {actionLoading ? 'Loading...' : `Start ${numChallengeQuestionsInput}-Question Challenge`}
             </button>
           </div>
         </div>
@@ -1053,7 +1225,6 @@ const App = () => {
             </div>
             <div className="challenge-score">Score: {challengeScore}</div>
           </div>
-
           <div className="challenge-question-card">
             <p className="question-category-tag">{currentQuestion.category} - {currentQuestion.difficulty}</p>
             <h3>{currentQuestion.question}</h3>
@@ -1067,7 +1238,7 @@ const App = () => {
                     ${showChallengeAnswer && challengeSelectedAnswer === index && currentQuestion.correctAnswerIndex !== index ? 'incorrect' : ''}
                   `}
                   onClick={() => handleChallengeAnswer(index)}
-                  disabled={showChallengeAnswer}
+                  disabled={showChallengeAnswer || actionLoading}
                 >
                   <span className="option-letter">{String.fromCharCode(65 + index)}</span>
                   {option}
@@ -1081,7 +1252,7 @@ const App = () => {
                   <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)}.</p>
                 }
                 {currentQuestion.explanation && <p className="explanation-text"><em>Explanation:</em> {currentQuestion.explanation}</p>}
-                <button className="challenge-action-btn next-question-btn" onClick={handleNextChallengeQuestion}>
+                <button className="challenge-action-btn next-question-btn" onClick={handleNextChallengeQuestion} disabled={actionLoading}>
                   {currentChallengeQuestionIdx < challengeQuestions.length - 1 ? 'Next Question' : 'Finish Challenge'}
                 </button>
               </div>
@@ -1105,18 +1276,15 @@ const App = () => {
             <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>
           </div>
           <div className="challenge-ended-options">
-            <button className="challenge-action-btn play-again-btn" onClick={resetChallenge}>Configure New Challenge</button> {/* Changed to resetChallenge to go back to config */}
-            <button className="challenge-action-btn back-dashboard-btn" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
+            <button className="challenge-action-btn play-again-btn" onClick={resetChallenge} disabled={actionLoading}>Configure New Challenge</button>
+            <button className="challenge-action-btn back-dashboard-btn" onClick={() => navigate('dashboard')} disabled={actionLoading}>Back to Dashboard</button>
           </div>
         </div>
       );
     }
-    // Fallback for unexpected challenge state
     return <div className="challenge-view"><p>Loading challenge state...</p></div>;
   };
-
-
-  const LoginView = () => (
+  const LoginView = () => { /* ... existing JSX ... */ return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div className="login-container">
         <div className="login-card">
@@ -1125,39 +1293,34 @@ const App = () => {
             <h1>Vexcel</h1>
             <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
           </div>
-
-          {/* Show loader specifically for login view if loading and currentView is login */}
-          {loading && currentView === 'login' && (
+          {/* Show this if actionLoading is true (specific to login process) */}
+          {actionLoading && currentView === 'login' && (
             <div className="loading-section login-specific-loader">
               <div className="spinner"></div>
-              <p>Preparing Vexcel...</p>
+              <p>Processing Sign-In...</p>
             </div>
           )}
-
-          {/* Display messages on the login screen */}
-          {message && (
-            <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') ? 'info' : 'success')}`}>
+          {message && !user && currentView === 'login' && (
+            <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') || message.includes('logged out') ? 'info' : 'success')}`}>
               {message}
             </div>
           )}
-
-          {/* Show Google Login button only if not loading */}
-          {!loading && (
+          {/* Show GoogleLogin button only if not actionLoading AND no user is authenticated yet */}
+          {!actionLoading && !user && (
             <div className="login-section">
               <GoogleLogin
                 onSuccess={handleLoginSuccess}
                 onError={handleLoginError}
-                useOneTap={true} // Consider UX for one-tap
-                auto_select={false} // Set to true if you want auto-selection on revisit
+                useOneTap={true} // Consider setting to false for more explicit login flow during debugging
+                auto_select={false}
                 theme="outline"
                 size="large"
                 text="signin_with"
                 shape="rectangular"
-                width="300px" // Adjust as needed
+                width="300px"
               />
             </div>
           )}
-
           <div className="features-preview">
             <div className="feature"><BookOpen className="feature-icon" /><span>Interactive Modules</span></div>
             <div className="feature"><Users className="feature-icon" /><span>Team Collaboration</span></div>
@@ -1169,29 +1332,33 @@ const App = () => {
       </div>
     </GoogleOAuthProvider>
   );
+  };
 
   // --- Main App Render Logic ---
+  // This 'loading' state is for the initial Firebase auth check.
+  if (loading) {
+    return (
+      <div className="full-page-loader">
+        <div className="spinner"></div>
+        <p>Initializing Vexcel Platform...</p>
+      </div>
+    );
+  }
+
   return (
-    <> {/* Root Fragment to ensure styles are always rendered */}
-      {/* Global Loading State (for initial load before user state is known) */}
-      {loading && !user && currentView === 'login' && ( // More specific condition for initial full page loader
-        <div className="full-page-loader">
-          <div className="spinner"></div>
-          <p>Initializing Vexcel...</p>
-        </div>
-      )}
-
-      {/* Conditional Rendering based on user authentication and view */}
-      {!user && !loading && <LoginView />}
-
-      {user && !loading && (
+    <>
+      {!user ? (
+        <LoginView />
+      ) : (
         <div className="app">
           <Navigation />
           <main className="main-content">
-            {/* App-wide messages (not login specific) */}
-            {message && <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')?'success':'info')}`}>{message}</div>}
-            {/* View-specific loading (e.g., when fetching module data) */}
-            {loading && currentView !== 'login' && currentView !== 'challenge' && <div className="loading-section page-loader"><div className="spinner" /> <p>Loading...</p></div>}
+            {message && (currentView !== 'login' || user) &&
+                <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')||message.includes('Successfully')||message.includes('created') ?'success':'info')}`}>{message}</div>
+            }
+            {actionLoading && currentView !== 'login' && (
+                 <div className="loading-section page-loader"><div className="spinner" /> <p>Processing...</p></div>
+            )}
 
             {currentView === 'dashboard' && <Dashboard />}
             {currentView === 'module' && selectedModule && <ModuleView />}
@@ -1206,7 +1373,6 @@ const App = () => {
         </div>
       )}
 
-      {/* Global Styles - Now always rendered */}
       <style jsx global>{`
         :root {
             --color-blue-500: #3b82f6; --color-blue-600: #2563eb; --color-blue-100: #dbeafe; --color-blue-50: #eff6ff;
@@ -1223,10 +1389,9 @@ const App = () => {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; background-color: var(--bg-main); color: var(--text-primary); line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
-        
-        /* Styles for the main app container when user is logged in */
+
         .app { min-height: 100vh; display: flex; flex-direction: column; }
-        
+
         button { font-family: inherit; cursor: pointer; border:none; background:none; transition: all 0.2s ease-in-out;}
         button:disabled { cursor: not-allowed; opacity: 0.7; }
         input[type="text"], input[type="password"], input[type="email"], select { font-family: inherit; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s;}
@@ -1235,45 +1400,37 @@ const App = () => {
         .icon { width: 1.25rem; height: 1.25rem; } .icon-small { width: 1rem; height: 1rem; } .icon.rotated { transform: rotate(180deg); }
         .error-message { color: var(--color-red-600); background-color: var(--color-red-100); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem; border: 1px solid var(--color-red-500); }
         .info-message { color: var(--text-secondary); text-align: center; padding: 1rem; font-style: italic;}
-        
-        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.8); /* Use bg-main with opacity */ gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
+
+        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.9); /* Slightly more opaque */ gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
         .spinner { width: 3.5rem; height: 3.5rem; border: 5px solid #e0e0e0; border-top-color: var(--color-blue-500); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        
+
         .loading-section { display: flex; align-items: center; justify-content:center; gap: 1rem; padding: 1.5rem; background: rgba(255,255,255,0.7); border-radius:8px; margin-bottom:1.5rem; color: var(--text-secondary); }
-        .loading-section.page-loader { margin: 2rem auto; } /* For loading within a page section */
-        
+        .loading-section.page-loader { margin: 2rem auto; }
+
         .message { padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 500; border: 1px solid transparent; box-shadow: var(--shadow-sm); }
-        .message.app-message {max-width: 800px; margin-left:auto; margin-right:auto;} /* For messages within the logged-in app */
-        .message.login-message { margin-top: 1.5rem; margin-bottom: 0.5rem; } /* Specific for login screen messages */
+        .message.app-message {max-width: 800px; margin-left:auto; margin-right:auto;}
+        .message.login-message { margin-top: 1.5rem; margin-bottom: 0.5rem; }
         .message.success { background: var(--color-green-100); color: var(--color-green-600); border-color: var(--color-green-500); }
         .message.error { background: var(--color-red-100); color: var(--color-red-600); border-color: var(--color-red-500); }
         .message.info { background: var(--color-blue-100); color: var(--color-blue-600); border-color: var(--color-blue-500); }
-        
-        /* Login Page Specific Styles */
+
         .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%); }
         .login-card { background: white; border-radius: 16px; padding: 2.5rem 3rem; box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.2); width: 100%; max-width: 480px; text-align: center; }
         .login-header { margin-bottom: 2rem; }
         .login-header .brand-icon-large { width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; }
         .login-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a202c; margin-bottom: 0.5rem; }
         .login-header p { color: #718096; font-size: 1.05rem; margin-bottom: 1rem;}
-        .login-specific-loader { background:transparent; box-shadow:none; padding:1rem 0;} /* Loader styling for within the login card */
+        .login-specific-loader { background:transparent; box-shadow:none; padding:1rem 0;}
         .login-section { margin: 2.5rem 0; display: flex; justify-content: center; }
         .features-preview { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
         .feature { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; color: var(--text-light); font-size: 0.9rem; }
         .feature .feature-icon { width: 1.75rem; height: 1.75rem; color: var(--color-blue-500); }
         .login-footer { margin-top: 2.5rem; font-size: 0.85rem; color: #a0aec0; }
 
-        /* Navigation Styles */
         .nav { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 4.5rem; position: sticky; top: 0; z-index: 1000; box-shadow: var(--shadow-sm); }
         .nav-brand { display: flex; align-items: center; gap: 0.75rem; font-weight: 700; font-size: 1.5rem; color: var(--text-primary); }
-        .brand-logo-image {
-            width: 32px;
-            height: 32px;
-            /* margin-right: 0.6rem; */ /* Removed fixed margin for better flexibility with onError */
-            border-radius: 4px;
-            object-fit: contain; /* Ensures logo aspect ratio is maintained */
-        }
+        .brand-logo-image { width: 32px; height: 32px; border-radius: 4px; object-fit: contain; }
         .nav-items { display: flex; align-items: center; gap: 0.75rem; }
         .nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border-radius: 6px; color: var(--text-secondary); font-weight: 500; font-size:0.95rem; }
         .nav-item:hover { background: var(--color-blue-50); color: var(--color-blue-600); }
@@ -1285,7 +1442,6 @@ const App = () => {
         .logout-btn { background: var(--color-blue-50); color: var(--color-blue-600); padding: 0.6rem; border-radius: 50%; line-height:0;}
         .logout-btn:hover { background: var(--color-red-100); color: var(--color-red-600); }
 
-        /* Main Content Area Styles */
         .main-content { flex: 1; padding: 2.5rem; max-width: 1320px; margin: 0 auto; width: 100%; }
         .view-header { text-align: center; margin-bottom: 2.5rem; padding-bottom:1.5rem; border-bottom: 1px solid var(--border-color);}
         .view-header .header-icon { width: 3.5rem; height: 3.5rem; color: var(--color-blue-500); margin: 0 auto 1rem; }
@@ -1295,7 +1451,6 @@ const App = () => {
         .back-btn:hover { background-color: var(--color-blue-100); }
         .back-btn .icon.rotated { transform: rotate(180deg); }
 
-        /* Dashboard Specific Styles */
         .dashboard { display: flex; flex-direction: column; gap: 2.5rem; }
         .dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; flex-wrap: wrap;}
         .welcome-section { flex-grow: 1; }
@@ -1343,7 +1498,6 @@ const App = () => {
         .module-card .start-btn { width: 100%; padding: 0.8rem 1.2rem; background: var(--color-blue-500); color: white; border-radius: 8px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size:0.95rem; }
         .module-card .start-btn:hover { background: var(--color-blue-600); }
 
-        /* Module View Specific Styles */
         .module-view-header { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-md); margin-bottom:2rem;}
         .module-title-section { display: flex; align-items: flex-start; gap: 2rem; }
         .category-tag-module { display: inline-block; background-color: var(--color-purple-100); color: var(--color-purple-600); padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; }
@@ -1367,8 +1521,7 @@ const App = () => {
         .lesson-item .lesson-btn { padding: 0.6rem 1rem; background: var(--color-blue-500); color: white; border-radius: 6px; display: flex; align-items: center; gap: 0.4rem; font-size:0.9rem; margin-left:auto;}
         .lesson-item .lesson-btn:hover:not(:disabled) { background: var(--color-blue-600); }
         .lesson-item.locked .lesson-btn { background: #adb5bd; }
-        
-        /* Lesson Content View Styles */
+
         .lesson-content-view { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .lesson-title-header { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color);}
         .lesson-type-icon-large { width:2.5rem; height:2.5rem;}
@@ -1383,7 +1536,6 @@ const App = () => {
         .lesson-content-view .complete-lesson-btn { display: inline-flex; align-items:center; gap:0.5rem; padding: 0.9rem 2rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; }
         .lesson-content-view .complete-lesson-btn:hover { background: var(--color-green-600); }
 
-        /* Quiz View Styles */
         .quiz-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .quiz-header-info {text-align:center; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border-color);}
         .quiz-header-info h2 {font-size:1.8rem; margin-top:0.5rem; margin-bottom:1rem;}
@@ -1422,7 +1574,6 @@ const App = () => {
         .quiz-result .continue-btn { background: var(--color-blue-500); color: white; }
         .quiz-result .continue-btn:hover { background: var(--color-blue-600); }
 
-        /* Game View Styles */
         .game-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .game-header-info {text-align:center; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border-color);}
         .game-header-info h2 {font-size:1.8rem; margin-top:0.5rem; margin-bottom:1rem;}
@@ -1432,7 +1583,6 @@ const App = () => {
         .complete-game-btn { padding: 1rem 2.5rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1.05rem; font-weight: 600; }
         .complete-game-btn:hover { background: var(--color-green-600); }
         
-        /* Teams View Styles */
         .teams-view .current-team-card { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .current-team-card .team-card-main { display:flex; align-items:flex-start; gap:2rem; margin-bottom:2rem;}
         .team-avatar-icon { width:4rem; height:4rem; flex-shrink:0; }
@@ -1454,7 +1604,6 @@ const App = () => {
         .divider-or::before, .divider-or::after {content:''; display:block; width:40%; height:1px; background:var(--border-color); position:absolute; top:50%;}
         .divider-or::before {left:0;} .divider-or::after {right:0;}
         
-        /* Browse Teams View Styles */
         .browse-teams-view .search-bar-container { display: flex; align-items: center; margin-bottom: 2.5rem; background: var(--bg-card); padding: 0.6rem 1.2rem; border-radius: 8px; box-shadow: var(--shadow-md); }
         .browse-teams-view .search-icon { color: #9ca3af; margin-right: 0.8rem; width:1.25rem; height:1.25rem;}
         .browse-teams-view .teams-search-input { flex-grow: 1; border: none; padding: 0.8rem 0.5rem; font-size: 1.05rem; outline: none; background:transparent; }
@@ -1472,7 +1621,6 @@ const App = () => {
         .join-team-browse-btn:disabled { background-color: #bdc3c7; }
         .current-team-indicator { color: var(--color-green-600); font-weight:600; display:flex; align-items:center; gap:0.3rem;}
         
-        /* Leaderboard View Styles */
         .leaderboard-view .leaderboard-list { background: var(--bg-card); border-radius:10px; box-shadow: var(--shadow-lg); overflow:hidden;}
         .leaderboard-item { display:flex; align-items:center; padding: 1.25rem 1.75rem; border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;}
         .leaderboard-item:last-child {border-bottom:none;}
@@ -1484,7 +1632,6 @@ const App = () => {
         .leaderboard-item .team-info p {font-size:0.9rem; color:var(--text-light);}
         .leaderboard-item .team-xp {font-size:1.2rem; font-weight:700; color:var(--color-purple-500); margin-left:auto; text-align:right;}
 
-        /* VEXpert Challenge View Styles */
         .challenge-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .challenge-idle-content { text-align:center; padding: 2rem 0;}
         .challenge-arena-icon { width: 100px; height: 100px; margin: 0 auto 1.5rem; border-radius: 12px; }
