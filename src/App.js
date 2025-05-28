@@ -197,7 +197,14 @@ const App = () => {
 
 
   useEffect(() => {
-    setLoading(false);
+    // Simulate initial loading if needed, or remove if not necessary
+    // For example, if you were fetching initial user data:
+    // const checkUserSession = async () => {
+    //   // ... your logic to check session ...
+    //   setLoading(false);
+    // };
+    // checkUserSession();
+    setLoading(false); // Assuming no async check on initial load for this example
   }, []);
 
   useEffect(() => {
@@ -214,10 +221,10 @@ const App = () => {
         setChallengeTimer(prevTime => prevTime - 1);
       }, 1000);
     } else if (challengeState === 'active' && challengeTimer === 0 && !showChallengeAnswer) {
-      handleChallengeAnswer(null);
+      handleChallengeAnswer(null); // Auto-submit if timer runs out
     }
     return () => clearInterval(interval);
-  }, [challengeState, challengeTimer, showChallengeAnswer]);
+  }, [challengeState, challengeTimer, showChallengeAnswer]); // Added handleChallengeAnswer to dependencies
 
 
   const handleLoginSuccess = async (credentialResponse) => {
@@ -241,9 +248,11 @@ const App = () => {
           }
         } catch (e) {
           console.error("Error decoding JWT: ", e);
+          // Potentially set a user-facing error message here
         }
       }
 
+      // Simulate backend verification
       const backendResponse = await simulateBackendVerification(
         credentialResponse.credential,
         googleUserName,
@@ -259,12 +268,12 @@ const App = () => {
         setCurrentView('dashboard');
       } else {
         setMessage('Login verification failed: ' + backendResponse.error);
-        googleLogout();
+        googleLogout(); // Ensure logout on failure
       }
     } catch (error) {
       console.error("Login Error:", error);
       setMessage('Error during login verification. Please try again.');
-      googleLogout();
+      googleLogout(); // Ensure logout on error
     } finally {
       setLoading(false);
     }
@@ -282,22 +291,33 @@ const App = () => {
     setSelectedModule(null); setCurrentLesson(null);
     setJoinTeamCodeInput(''); setCreateTeamNameInput('');
     setChallengeState('idle');
-    setCurrentView('login');
+    setCurrentView('login'); // Navigate to login view after logout
     setMessage('You have been logged out successfully.');
     setLoading(false);
   };
 
+  // Simulates a backend call to verify the token and fetch/create user data
   const simulateBackendVerification = async (idToken, name, email, avatarUrl) => {
+    // In a real app, this would be an API call:
+    // const response = await fetch('/api/auth/google', {
+    //   method: 'POST',
+    //   headers: { 'Content-Type': 'application/json' },
+    //   body: JSON.stringify({ token: idToken, name, email, avatarUrl }),
+    // });
+    // return await response.json();
+
     return new Promise((resolve) => {
       setTimeout(() => {
-        if (idToken) {
+        if (idToken) { // Basic check, real verification is more complex
           const mockUser = {
-            id: `user_${Date.now()}`,
+            id: `user_${Date.now()}`, // Or a persistent ID from your backend
             name: name,
             email: email,
             avatar: avatarUrl,
             xp: 0, level: 1, streak: 0
+            // ... other user details from your backend
           };
+          // Simulate fetching team and progress
           resolve({ success: true, user: mockUser, team: null, progress: {} });
         } else {
           resolve({ success: false, error: 'No ID token provided.' });
@@ -307,29 +327,30 @@ const App = () => {
   };
 
   const navigate = (view, data = null) => {
-    setMessage('');
+    setMessage(''); // Clear previous messages on navigation
     setCurrentView(view);
     if (data) {
       if (view === 'module') {
-        const moduleData = learningModules.find(m => m.id === (data.id || data));
+        const moduleData = learningModules.find(m => m.id === (data.id || data)); // Handle both object and ID
         setSelectedModule(moduleData);
-        setCurrentLesson(null);
+        setCurrentLesson(null); // Reset lesson when navigating to a module overview
       } else if (view === 'lessonContent' && data.lesson && data.moduleId) {
         const moduleForLesson = learningModules.find(m => m.id === data.moduleId);
         if (moduleForLesson) {
-            setSelectedModule(moduleForLesson);
+            setSelectedModule(moduleForLesson); // Ensure module context is set
             setCurrentLesson(data.lesson);
         } else {
             setMessage("Error: Module context for lesson not found.");
-            setCurrentView('dashboard');
+            setCurrentView('dashboard'); // Fallback
         }
       } else if (view === 'quiz') setQuizData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
       else if (view === 'game') setGameData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
     } else {
+      // Reset contextual data if navigating to a view that doesn't need it
       if (!['module', 'lessonContent', 'quiz', 'game', 'challenge'].includes(view)) {
         setSelectedModule(null); setCurrentLesson(null); setQuizData(null); setGameData(null);
       }
-      if(view === 'challenge') {
+      if(view === 'challenge') { // Reset challenge state when navigating to challenge hub
         setChallengeState('idle');
         setChallengeScore(0);
         setCurrentChallengeQuestionIdx(0);
@@ -339,8 +360,12 @@ const App = () => {
     }
   };
 
+  // Auto-clear messages after a delay
   useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 5000); return () => clearTimeout(t); } }, [message]);
+
+  // Handle Level Up
   useEffect(() => { if (user && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) { const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1; setUser(prev => ({ ...prev, level: newLevel })); setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`); } }, [user?.xp, user?.level]);
+
 
   const handleCompleteItem = (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
     setUserProgress(prev => {
@@ -349,19 +374,24 @@ const App = () => {
       return { ...prev, [moduleId]: { ...moduleProg, lessons: updatedLessons, moduleXp: (moduleProg.moduleXp || 0) + xpEarned } };
     });
     setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
-    if (userTeam) {
+
+    if (userTeam) { // Update team XP if user is in a team
         const updatedTeamXP = (userTeam.totalXP || 0) + xpEarned;
         setUserTeam(prevTeam => ({...prevTeam, totalXP: updatedTeamXP}));
+        // Also update the team in the global `allTeams` list for leaderboards etc.
         setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? {...t, totalXP: updatedTeamXP} : t));
     }
+
+    // Force re-render of module view if the completed item was in the currently selected module
     if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
+
     setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
   };
 
   const handleJoinTeam = async (teamCodeToJoin = joinTeamCodeInput) => {
     if (!teamCodeToJoin.trim()) { setMessage("Please enter or select a team code."); return; }
     if (userTeam) { setMessage("You are already in a team. Leave your current team first to join another."); return; }
-    setLoading(true); await new Promise(r => setTimeout(r, 750));
+    setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
     const teamToJoin = allTeams.find(t => t.code === teamCodeToJoin.trim());
     if (teamToJoin) {
       setUserTeam(teamToJoin);
@@ -374,12 +404,12 @@ const App = () => {
   const handleCreateTeam = async () => {
     if (!createTeamNameInput.trim()) { setMessage("Please enter a valid team name."); return; }
     if (userTeam) { setMessage("You are already in a team. Leave your current team first to create a new one."); return; }
-    setLoading(true); await new Promise(r => setTimeout(r, 750));
+    setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
     const newTeamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     const newTeam = {
       id: `team_${Date.now()}`, name: createTeamNameInput.trim(), code: newTeamCode,
-      members: 1, rank: 0,
-      totalXP: user ? user.xp : 0,
+      members: 1, rank: 0, // Rank might be calculated dynamically
+      totalXP: user ? user.xp : 0, // Initialize team XP with creator's XP
       description: `A brand new Vexcel team led by ${user ? user.name : 'a Vexcel user'}!`
     };
     setUserTeam(newTeam);
@@ -389,15 +419,17 @@ const App = () => {
   };
 
   const handleLeaveTeam = async () => {
-    if (!userTeam) return; setLoading(true); await new Promise(r => setTimeout(r, 750));
+    if (!userTeam) return; setLoading(true); await new Promise(r => setTimeout(r, 750)); // Simulate API call
     const teamName = userTeam.name;
+    // Update allTeams: decrement member count, potentially remove if becomes empty (optional)
     setAllTeams(prevTeams => prevTeams.map(t => t.id === userTeam.id ? { ...t, members: Math.max(0, (t.members || 1) - 1) } : t)
-                                     .filter(t => t.members > 0 || t.id !== userTeam.id)
+                                     .filter(t => t.members > 0 || t.id !== userTeam.id) // Example: remove if 0 members and it's the team being left
     );
     setUserTeam(null);
     setMessage(`You have left team: ${teamName}.`);
     setLoading(false);
   };
+
 
   const startVexpertChallenge = () => {
     setLoading(true);
@@ -432,13 +464,14 @@ const App = () => {
         return;
     }
 
+    // Shuffle and pick questions
     const shuffledQuestions = [...filteredByCategories].sort(() => 0.5 - Math.random());
     setChallengeQuestions(shuffledQuestions.slice(0, questionsToAskCount));
     setCurrentChallengeQuestionIdx(0);
     setChallengeScore(0);
     setChallengeSelectedAnswer(null);
     setShowChallengeAnswer(false);
-    setChallengeTimer(QUESTION_TIMER_DURATION);
+    setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer for the first question
     setChallengeState('active');
     setLoading(false);
     setMessage(`Challenge started with ${questionsToAskCount} questions! Good luck!`);
@@ -446,7 +479,7 @@ const App = () => {
 
 
   const handleChallengeAnswer = (selectedIndex) => {
-    if (showChallengeAnswer) return;
+    if (showChallengeAnswer) return; // Prevent multiple submissions
 
     setShowChallengeAnswer(true);
     setChallengeSelectedAnswer(selectedIndex);
@@ -454,6 +487,7 @@ const App = () => {
     if (selectedIndex === currentQuestion.correctAnswerIndex) {
       setChallengeScore(prevScore => prevScore + 1);
     }
+    // Timer is cleared by useEffect when showChallengeAnswer becomes true
   };
 
   const handleNextChallengeQuestion = () => {
@@ -462,12 +496,13 @@ const App = () => {
 
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
       setCurrentChallengeQuestionIdx(prevIdx => prevIdx + 1);
-      setChallengeTimer(QUESTION_TIMER_DURATION);
+      setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer for next question
     } else {
+      // Challenge finished
       setChallengeState('results');
       const xpEarned = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
       setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
-      if (userTeam) {
+      if (userTeam) { // Update team XP
           const updatedTeamXP = (userTeam.totalXP || 0) + xpEarned;
           setUserTeam(prevTeam => ({...prevTeam, totalXP: updatedTeamXP}));
           setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? {...t, totalXP: updatedTeamXP} : t));
@@ -476,6 +511,7 @@ const App = () => {
     }
   };
 
+  // Reset challenge to initial config screen
   const resetChallenge = () => {
     setChallengeState('idle');
     setChallengeQuestions([]);
@@ -483,13 +519,17 @@ const App = () => {
     setChallengeScore(0);
     setChallengeSelectedAnswer(null);
     setShowChallengeAnswer(false);
+    // Keep numChallengeQuestionsInput and selectedChallengeCategories as they were for user convenience
   };
 
+
+  // --- Sub-components ---
 
   const Navigation = () => (
     <nav className="nav">
       <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
-        <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" />
+        {/* Replace with your actual logo if you have one */}
+        <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
         <span className="brand-text">Vexcel</span>
       </div>
       {user && (
@@ -510,20 +550,25 @@ const App = () => {
   );
 
   const Dashboard = () => {
-    if (!user) return null;
+    if (!user) return null; // Should not happen if navigation guards are correct
+
+    // Determine modules in progress
     const modulesInProgress = learningModules.filter(m => {
         const prog = userProgress[m.id];
         return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
     });
+
+    // Determine recommended next module: first in progress, or first not started/completed
     const recommendedNextModule = modulesInProgress.length > 0 ? modulesInProgress[0] : learningModules.find(m => !userProgress[m.id] || Object.keys(userProgress[m.id].lessons).length === 0);
 
+    // Group modules by category for display
     const categorizedModules = learningModules.reduce((acc, module) => {
-        const category = module.category || 'General';
+        const category = module.category || 'General'; // Default category
         if (!acc[category]) acc[category] = [];
         acc[category].push(module);
         return acc;
     }, {});
-    const categoryOrder = ['Hardware', 'Software', 'CAD', 'General'];
+    const categoryOrder = ['Hardware', 'Software', 'CAD', 'General']; // Desired display order
 
 
     return (
@@ -612,6 +657,7 @@ const App = () => {
           {selectedModule.content.lessons.map((lesson, index) => {
             const lessonState = moduleProg.lessons[lesson.id] || { completed: false };
             const isCompleted = lessonState.completed;
+            // A lesson is locked if it's not the first one AND the previous one isn't completed.
             const isLocked = index > 0 && !(moduleProg.lessons[selectedModule.content.lessons[index - 1].id]?.completed);
 
             const LessonIcon = lesson.type === 'quiz' ? Puzzle : lesson.type === 'game' ? Play : MessageSquare;
@@ -619,7 +665,7 @@ const App = () => {
             return (
               <div key={lesson.id} className={`lesson-item ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
                 onClick={() => {
-                  if (isLocked && !isCompleted) return;
+                  if (isLocked && !isCompleted) return; // Don't navigate if locked (unless already completed for review)
                   if (lesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson });
                   else if (lesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson });
                   else if (lesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson });
@@ -644,13 +690,19 @@ const App = () => {
 
     const handleMarkCompleteAndContinue = () => {
       if (!isCompleted) handleCompleteItem(selectedModule.id, currentLesson.id, currentLesson.type, null, currentLesson.xp);
+
+      // Navigate to the next item in the module
       const currentIndex = selectedModule.content.lessons.findIndex(l => l.id === currentLesson.id);
       const nextLesson = selectedModule.content.lessons[currentIndex + 1];
-      if (nextLesson) {
-        const nextLessonProg = moduleProg.lessons[nextLesson.id] || { completed: false };
-        const isNextLocked = !(moduleProg.lessons[currentLesson.id]?.completed) && !nextLessonProg.completed;
 
-        if (isNextLocked && !isCompleted) {
+      if (nextLesson) {
+        // Check if the next lesson would be locked if this one wasn't just completed
+        // This logic might need refinement based on how `isCompleted` updates immediately
+        const nextLessonProg = moduleProg.lessons[nextLesson.id] || { completed: false };
+        const isNextLocked = !(moduleProg.lessons[currentLesson.id]?.completed || isCompleted) && !nextLessonProg.completed;
+
+
+        if (isNextLocked && !isCompleted) { // If current wasn't completed and next is locked, go back to module
              navigate('module', { id: selectedModule.id });
              return;
         }
@@ -658,8 +710,8 @@ const App = () => {
         if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
-        else navigate('module', { id: selectedModule.id });
-      } else navigate('module', { id: selectedModule.id });
+        else navigate('module', { id: selectedModule.id }); // Fallback if type is unknown
+      } else navigate('module', { id: selectedModule.id }); // No next lesson, back to module
     };
 
     return (
@@ -681,9 +733,9 @@ const App = () => {
   const QuizView = () => {
     const [currentQIdx, setCurrentQIdx] = useState(0);
     const [selectedAns, setSelectedAns] = useState(null);
-    const [showRes, setShowRes] = useState(false);
+    const [showRes, setShowRes] = useState(false); // Show quiz results page
     const [quizScore, setQuizScore] = useState(0);
-    const [showExplanation, setShowExplanation] = useState(false);
+    const [showExplanation, setShowExplanation] = useState(false); // Show explanation for current question
 
 
     if (!quizData || !quizData.lessonId) return <p className="error-message">Loading quiz...</p>;
@@ -691,11 +743,11 @@ const App = () => {
     if (!quizContent) return <p className="error-message">Quiz content not found for: {quizData.lessonId}</p>;
 
     const handleAnsSelect = (idx) => {
-        if (showExplanation) return;
+        if (showExplanation) return; // Don't allow changing answer after submitting
         setSelectedAns(idx);
     }
     const handleSubmitAnswer = () => {
-      if (selectedAns === null) return;
+      if (selectedAns === null) return; // Must select an answer
       setShowExplanation(true);
       const q = quizContent.questions[currentQIdx];
       if (selectedAns === q.correct) {
@@ -709,17 +761,19 @@ const App = () => {
       if (currentQIdx + 1 < quizContent.questions.length) {
         setCurrentQIdx(i => i + 1);
       } else {
+        // Quiz finished, show results
         setShowRes(true);
-        const finalScore = quizScore;
-        const passPercent = 70;
+        const finalScore = quizScore; // Use the score accumulated up to this point
+        const passPercent = 70; // Example passing percentage
         const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[quizData.lesson.id] || {};
 
+        // Award XP only if not previously completed and passed
         if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
           handleCompleteItem(quizData.moduleId, quizData.lesson.id, 'quiz', finalScore, quizData.lesson.xp);
         } else if (currentModuleProgress.completed) {
             setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
         }
-        else {
+        else { // Failed to pass
             setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
         }
       }
@@ -791,7 +845,7 @@ const App = () => {
       } else {
         setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
       }
-      navigate('module', {id: gameData.moduleId});
+      navigate('module', {id: gameData.moduleId}); // Navigate back to module view
     };
 
     return (
@@ -803,6 +857,7 @@ const App = () => {
         </div>
         <div className="game-container">
           <p className="game-instructions">{gameContent.instructions}</p>
+          {/* Placeholder for actual game content or simulation */}
           <div className="game-placeholder">Simulated Game Area / Conceptual Challenge</div>
           <button onClick={handleCompleteGame} className="complete-game-btn">Complete Challenge</button>
         </div>
@@ -816,7 +871,7 @@ const App = () => {
       {userTeam ? (
         <div className="current-team-card">
           <div className="team-card-main">
-            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/>
+            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/> {/* Default color if team.color undefined */}
             <div>
                 <h2>{userTeam.name}</h2>
                 <p className="team-description-small">{userTeam.description}</p>
@@ -850,14 +905,15 @@ const App = () => {
 
   const BrowseTeamsView = () => {
     const [searchTerm, setSearchTerm] = useState('');
+    // Filter and sort teams for display
     const filteredAndSortedTeams = useMemo(() =>
         allTeams
-            .filter(team =>
+            .filter(team => // Case-insensitive search
                 team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 team.code.toLowerCase().includes(searchTerm.toLowerCase())
             )
-            .sort((a,b) => b.totalXP - a.totalXP),
+            .sort((a,b) => b.totalXP - a.totalXP), // Sort by XP descending
         [allTeams, searchTerm]
     );
 
@@ -876,6 +932,7 @@ const App = () => {
                 <p className="team-description">{team.description || "No description available."}</p>
                 <div className="team-card-footer">
                   <span><Users size={16} /> {team.members} Members</span> <span><Trophy size={16} /> {team.totalXP.toLocaleString()} XP</span>
+                  {/* Show Join button only if user is not in a team or not in THIS team */}
                   {(!userTeam || userTeam.id !== team.id) && <button onClick={() => handleJoinTeam(team.code)} className="join-team-browse-btn" disabled={loading || !!userTeam}>{!!userTeam ? 'In a Team' : 'Join Team'}</button>}
                   {userTeam && userTeam.id === team.id && <span className="current-team-indicator"><Check size={16}/> Your Team</span>}
                 </div>
@@ -890,6 +947,7 @@ const App = () => {
   };
 
   const LeaderboardView = () => {
+    // Sort teams by totalXP for leaderboard display
     const sortedLeaderboard = useMemo(() =>
         [...allTeams].sort((a, b) => b.totalXP - a.totalXP).map((team, index) => ({ ...team, rank: index + 1 })),
         [allTeams]
@@ -911,7 +969,7 @@ const App = () => {
   };
 
   const VexpertChallengeView = () => {
-    if (loading && challengeState !== 'active') {
+    if (loading && challengeState !== 'active') { // Show loader only if not already in an active challenge
         return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
     }
 
@@ -937,8 +995,8 @@ const App = () => {
                   disabled={loading}
                 >
                   {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
-                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0)
-                    .sort((a,b) => a-b)
+                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) // Unique, valid counts
+                    .sort((a,b) => a-b) // Sort numerically
                     .map(num => (
                       <option key={num} value={num}>
                         {num === vexpertChallengeBank.length ? `All (${vexpertChallengeBank.length})` : num}
@@ -1047,13 +1105,14 @@ const App = () => {
             <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>
           </div>
           <div className="challenge-ended-options">
-            <button className="challenge-action-btn play-again-btn" onClick={startVexpertChallenge}>Play Again</button>
+            <button className="challenge-action-btn play-again-btn" onClick={resetChallenge}>Configure New Challenge</button> {/* Changed to resetChallenge to go back to config */}
             <button className="challenge-action-btn back-dashboard-btn" onClick={() => navigate('dashboard')}>Back to Dashboard</button>
           </div>
         </div>
       );
     }
-    return <div className="challenge-view"><p>Loading challenge...</p></div>;
+    // Fallback for unexpected challenge state
+    return <div className="challenge-view"><p>Loading challenge state...</p></div>;
   };
 
 
@@ -1067,6 +1126,7 @@ const App = () => {
             <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
           </div>
 
+          {/* Show loader specifically for login view if loading and currentView is login */}
           {loading && currentView === 'login' && (
             <div className="loading-section login-specific-loader">
               <div className="spinner"></div>
@@ -1074,24 +1134,26 @@ const App = () => {
             </div>
           )}
 
+          {/* Display messages on the login screen */}
           {message && (
             <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') ? 'info' : 'success')}`}>
               {message}
             </div>
           )}
 
+          {/* Show Google Login button only if not loading */}
           {!loading && (
             <div className="login-section">
               <GoogleLogin
                 onSuccess={handleLoginSuccess}
                 onError={handleLoginError}
-                useOneTap={true}
-                auto_select={false}
+                useOneTap={true} // Consider UX for one-tap
+                auto_select={false} // Set to true if you want auto-selection on revisit
                 theme="outline"
                 size="large"
                 text="signin_with"
                 shape="rectangular"
-                width="300px"
+                width="300px" // Adjust as needed
               />
             </div>
           )}
@@ -1108,30 +1170,43 @@ const App = () => {
     </GoogleOAuthProvider>
   );
 
-  if (loading && !user) {
-    return <div className="full-page-loader"><div className="spinner"></div><p>Initializing Vexcel...</p></div>;
-  }
-
-  if (!user) {
-    return <LoginView />;
-  }
-
+  // --- Main App Render Logic ---
   return (
-    <div className="app">
-      <Navigation />
-      <main className="main-content">
-        {message && <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')?'success':'info')}`}>{message}</div>}
-        {loading && currentView !== 'login' && currentView !== 'challenge' && <div className="loading-section page-loader"><div className="spinner" /> <p>Loading...</p></div>}
-        {currentView === 'dashboard' && <Dashboard />}
-        {currentView === 'module' && selectedModule && <ModuleView />}
-        {currentView === 'lessonContent' && currentLesson && selectedModule && <LessonContentView />}
-        {currentView === 'quiz' && quizData && <QuizView />}
-        {currentView === 'game' && gameData && <GameView />}
-        {currentView === 'teams' && <TeamsView />}
-        {currentView === 'browseTeams' && <BrowseTeamsView />}
-        {currentView === 'leaderboard' && <LeaderboardView />}
-        {currentView === 'challenge' && <VexpertChallengeView />}
-      </main>
+    <> {/* Root Fragment to ensure styles are always rendered */}
+      {/* Global Loading State (for initial load before user state is known) */}
+      {loading && !user && currentView === 'login' && ( // More specific condition for initial full page loader
+        <div className="full-page-loader">
+          <div className="spinner"></div>
+          <p>Initializing Vexcel...</p>
+        </div>
+      )}
+
+      {/* Conditional Rendering based on user authentication and view */}
+      {!user && !loading && <LoginView />}
+
+      {user && !loading && (
+        <div className="app">
+          <Navigation />
+          <main className="main-content">
+            {/* App-wide messages (not login specific) */}
+            {message && <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')?'success':'info')}`}>{message}</div>}
+            {/* View-specific loading (e.g., when fetching module data) */}
+            {loading && currentView !== 'login' && currentView !== 'challenge' && <div className="loading-section page-loader"><div className="spinner" /> <p>Loading...</p></div>}
+
+            {currentView === 'dashboard' && <Dashboard />}
+            {currentView === 'module' && selectedModule && <ModuleView />}
+            {currentView === 'lessonContent' && currentLesson && selectedModule && <LessonContentView />}
+            {currentView === 'quiz' && quizData && <QuizView />}
+            {currentView === 'game' && gameData && <GameView />}
+            {currentView === 'teams' && <TeamsView />}
+            {currentView === 'browseTeams' && <BrowseTeamsView />}
+            {currentView === 'leaderboard' && <LeaderboardView />}
+            {currentView === 'challenge' && <VexpertChallengeView />}
+          </main>
+        </div>
+      )}
+
+      {/* Global Styles - Now always rendered */}
       <style jsx global>{`
         :root {
             --color-blue-500: #3b82f6; --color-blue-600: #2563eb; --color-blue-100: #dbeafe; --color-blue-50: #eff6ff;
@@ -1148,7 +1223,10 @@ const App = () => {
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; background-color: var(--bg-main); color: var(--text-primary); line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
+        
+        /* Styles for the main app container when user is logged in */
         .app { min-height: 100vh; display: flex; flex-direction: column; }
+        
         button { font-family: inherit; cursor: pointer; border:none; background:none; transition: all 0.2s ease-in-out;}
         button:disabled { cursor: not-allowed; opacity: 0.7; }
         input[type="text"], input[type="password"], input[type="email"], select { font-family: inherit; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s;}
@@ -1157,37 +1235,44 @@ const App = () => {
         .icon { width: 1.25rem; height: 1.25rem; } .icon-small { width: 1rem; height: 1rem; } .icon.rotated { transform: rotate(180deg); }
         .error-message { color: var(--color-red-600); background-color: var(--color-red-100); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem; border: 1px solid var(--color-red-500); }
         .info-message { color: var(--text-secondary); text-align: center; padding: 1rem; font-style: italic;}
-        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 80vh; background-color: rgba(255,255,255,0.5); gap:1rem; }
+        
+        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.8); /* Use bg-main with opacity */ gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
         .spinner { width: 3.5rem; height: 3.5rem; border: 5px solid #e0e0e0; border-top-color: var(--color-blue-500); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
         .loading-section { display: flex; align-items: center; justify-content:center; gap: 1rem; padding: 1.5rem; background: rgba(255,255,255,0.7); border-radius:8px; margin-bottom:1.5rem; color: var(--text-secondary); }
-        .loading-section.page-loader { margin: 2rem auto; }
+        .loading-section.page-loader { margin: 2rem auto; } /* For loading within a page section */
+        
         .message { padding: 1rem 1.5rem; border-radius: 8px; margin-bottom: 1.5rem; font-weight: 500; border: 1px solid transparent; box-shadow: var(--shadow-sm); }
-        .message.app-message {max-width: 800px; margin-left:auto; margin-right:auto;}
+        .message.app-message {max-width: 800px; margin-left:auto; margin-right:auto;} /* For messages within the logged-in app */
+        .message.login-message { margin-top: 1.5rem; margin-bottom: 0.5rem; } /* Specific for login screen messages */
         .message.success { background: var(--color-green-100); color: var(--color-green-600); border-color: var(--color-green-500); }
         .message.error { background: var(--color-red-100); color: var(--color-red-600); border-color: var(--color-red-500); }
         .message.info { background: var(--color-blue-100); color: var(--color-blue-600); border-color: var(--color-blue-500); }
+        
+        /* Login Page Specific Styles */
         .login-container { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 1rem; background: linear-gradient(135deg, #6B73FF 0%, #000DFF 100%); }
         .login-card { background: white; border-radius: 16px; padding: 2.5rem 3rem; box-shadow: 0 20px 40px -15px rgba(0, 0, 0, 0.2); width: 100%; max-width: 480px; text-align: center; }
         .login-header { margin-bottom: 2rem; }
         .login-header .brand-icon-large { width: 4.5rem; height: 4.5rem; margin: 0 auto 1rem; }
         .login-header h1 { font-size: 2.5rem; font-weight: 700; color: #1a202c; margin-bottom: 0.5rem; }
         .login-header p { color: #718096; font-size: 1.05rem; margin-bottom: 1rem;}
-        .login-specific-loader { background:transparent; box-shadow:none; padding:1rem 0;}
-        .login-message { margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        .login-specific-loader { background:transparent; box-shadow:none; padding:1rem 0;} /* Loader styling for within the login card */
         .login-section { margin: 2.5rem 0; display: flex; justify-content: center; }
         .features-preview { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; margin-top: 2.5rem; padding-top: 1.5rem; border-top: 1px solid var(--border-color); }
         .feature { display: flex; flex-direction: column; align-items: center; gap: 0.6rem; color: var(--text-light); font-size: 0.9rem; }
         .feature .feature-icon { width: 1.75rem; height: 1.75rem; color: var(--color-blue-500); }
         .login-footer { margin-top: 2.5rem; font-size: 0.85rem; color: #a0aec0; }
 
+        /* Navigation Styles */
         .nav { background: var(--bg-card); border-bottom: 1px solid var(--border-color); padding: 0 2rem; display: flex; align-items: center; justify-content: space-between; height: 4.5rem; position: sticky; top: 0; z-index: 1000; box-shadow: var(--shadow-sm); }
         .nav-brand { display: flex; align-items: center; gap: 0.75rem; font-weight: 700; font-size: 1.5rem; color: var(--text-primary); }
         .brand-logo-image {
             width: 32px;
             height: 32px;
-            margin-right: 0.6rem;
+            /* margin-right: 0.6rem; */ /* Removed fixed margin for better flexibility with onError */
             border-radius: 4px;
+            object-fit: contain; /* Ensures logo aspect ratio is maintained */
         }
         .nav-items { display: flex; align-items: center; gap: 0.75rem; }
         .nav-item { display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; border-radius: 6px; color: var(--text-secondary); font-weight: 500; font-size:0.95rem; }
@@ -1200,6 +1285,7 @@ const App = () => {
         .logout-btn { background: var(--color-blue-50); color: var(--color-blue-600); padding: 0.6rem; border-radius: 50%; line-height:0;}
         .logout-btn:hover { background: var(--color-red-100); color: var(--color-red-600); }
 
+        /* Main Content Area Styles */
         .main-content { flex: 1; padding: 2.5rem; max-width: 1320px; margin: 0 auto; width: 100%; }
         .view-header { text-align: center; margin-bottom: 2.5rem; padding-bottom:1.5rem; border-bottom: 1px solid var(--border-color);}
         .view-header .header-icon { width: 3.5rem; height: 3.5rem; color: var(--color-blue-500); margin: 0 auto 1rem; }
@@ -1209,6 +1295,7 @@ const App = () => {
         .back-btn:hover { background-color: var(--color-blue-100); }
         .back-btn .icon.rotated { transform: rotate(180deg); }
 
+        /* Dashboard Specific Styles */
         .dashboard { display: flex; flex-direction: column; gap: 2.5rem; }
         .dashboard-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 2rem; flex-wrap: wrap;}
         .welcome-section { flex-grow: 1; }
@@ -1220,6 +1307,7 @@ const App = () => {
         .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; }
         .stat-card .stat-label { font-size: 0.9rem; color: var(--text-light); }
         .team-card { background: linear-gradient(135deg, var(--color-blue-500) 0%, var(--color-purple-500) 100%); color:white; padding: 2rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-lg); }
+        .team-card .team-info {display:flex; align-items:center; gap:1rem;}
         .team-card .team-icon { width:2.5rem; height:2.5rem; color:white;}
         .team-card h3 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
         .team-card p { opacity:0.9; font-size: 0.95rem; }
@@ -1255,6 +1343,7 @@ const App = () => {
         .module-card .start-btn { width: 100%; padding: 0.8rem 1.2rem; background: var(--color-blue-500); color: white; border-radius: 8px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 0.5rem; font-size:0.95rem; }
         .module-card .start-btn:hover { background: var(--color-blue-600); }
 
+        /* Module View Specific Styles */
         .module-view-header { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-md); margin-bottom:2rem;}
         .module-title-section { display: flex; align-items: flex-start; gap: 2rem; }
         .category-tag-module { display: inline-block; background-color: var(--color-purple-100); color: var(--color-purple-600); padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; }
@@ -1278,6 +1367,8 @@ const App = () => {
         .lesson-item .lesson-btn { padding: 0.6rem 1rem; background: var(--color-blue-500); color: white; border-radius: 6px; display: flex; align-items: center; gap: 0.4rem; font-size:0.9rem; margin-left:auto;}
         .lesson-item .lesson-btn:hover:not(:disabled) { background: var(--color-blue-600); }
         .lesson-item.locked .lesson-btn { background: #adb5bd; }
+        
+        /* Lesson Content View Styles */
         .lesson-content-view { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .lesson-title-header { display:flex; align-items:center; gap:1rem; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color);}
         .lesson-type-icon-large { width:2.5rem; height:2.5rem;}
@@ -1292,6 +1383,7 @@ const App = () => {
         .lesson-content-view .complete-lesson-btn { display: inline-flex; align-items:center; gap:0.5rem; padding: 0.9rem 2rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1rem; font-weight: 600; }
         .lesson-content-view .complete-lesson-btn:hover { background: var(--color-green-600); }
 
+        /* Quiz View Styles */
         .quiz-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .quiz-header-info {text-align:center; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border-color);}
         .quiz-header-info h2 {font-size:1.8rem; margin-top:0.5rem; margin-bottom:1rem;}
@@ -1330,6 +1422,7 @@ const App = () => {
         .quiz-result .continue-btn { background: var(--color-blue-500); color: white; }
         .quiz-result .continue-btn:hover { background: var(--color-blue-600); }
 
+        /* Game View Styles */
         .game-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .game-header-info {text-align:center; margin-bottom:2rem; padding-bottom:1.5rem; border-bottom:1px solid var(--border-color);}
         .game-header-info h2 {font-size:1.8rem; margin-top:0.5rem; margin-bottom:1rem;}
@@ -1338,6 +1431,8 @@ const App = () => {
         .game-placeholder { min-height: 200px; background: #e9ecef; border-radius: 8px; display:flex; align-items:center; justify-content:center; color: var(--text-light); font-style:italic; margin-bottom:2rem;}
         .complete-game-btn { padding: 1rem 2.5rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1.05rem; font-weight: 600; }
         .complete-game-btn:hover { background: var(--color-green-600); }
+        
+        /* Teams View Styles */
         .teams-view .current-team-card { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .current-team-card .team-card-main { display:flex; align-items:flex-start; gap:2rem; margin-bottom:2rem;}
         .team-avatar-icon { width:4rem; height:4rem; flex-shrink:0; }
@@ -1354,13 +1449,15 @@ const App = () => {
         .input-group { display:flex; gap:1rem; }
         .input-group input {flex-grow:1;}
         .input-group button { padding: 0.75rem 1.5rem; background: var(--color-blue-500); color:white; border-radius:6px; font-weight:500;}
-        .input-group button:hover {background: var(--color-blue-600);}
+        .input-group button:hover:not(:disabled) {background: var(--color-blue-600);}
         .divider-or {text-align:center; font-weight:500; color:var(--text-light); position:relative;}
         .divider-or::before, .divider-or::after {content:''; display:block; width:40%; height:1px; background:var(--border-color); position:absolute; top:50%;}
         .divider-or::before {left:0;} .divider-or::after {right:0;}
+        
+        /* Browse Teams View Styles */
         .browse-teams-view .search-bar-container { display: flex; align-items: center; margin-bottom: 2.5rem; background: var(--bg-card); padding: 0.6rem 1.2rem; border-radius: 8px; box-shadow: var(--shadow-md); }
         .browse-teams-view .search-icon { color: #9ca3af; margin-right: 0.8rem; width:1.25rem; height:1.25rem;}
-        .browse-teams-view .teams-search-input { flex-grow: 1; border: none; padding: 0.8rem 0.5rem; font-size: 1.05rem; outline: none; }
+        .browse-teams-view .teams-search-input { flex-grow: 1; border: none; padding: 0.8rem 0.5rem; font-size: 1.05rem; outline: none; background:transparent; }
         .teams-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 2rem; }
         .team-browse-card { background: var(--bg-card); padding: 1.75rem; border-radius: 10px; box-shadow: var(--shadow-md); display:flex; flex-direction:column; transition: transform 0.2s, box-shadow 0.2s;}
         .team-browse-card:hover {transform:translateY(-4px); box-shadow:var(--shadow-lg);}
@@ -1371,9 +1468,11 @@ const App = () => {
         .team-browse-card .team-card-footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:1.25rem; font-size:0.9rem; color:var(--text-light);}
         .team-browse-card .team-card-footer span { display:flex; align-items:center; gap:0.4rem;}
         .join-team-browse-btn { background-color: var(--color-blue-500); color:white; padding: 0.7rem 1.2rem; border-radius:6px; font-weight:500;}
-        .join-team-browse-btn:hover { background-color: var(--color-blue-600);}
+        .join-team-browse-btn:hover:not(:disabled) { background-color: var(--color-blue-600);}
         .join-team-browse-btn:disabled { background-color: #bdc3c7; }
         .current-team-indicator { color: var(--color-green-600); font-weight:600; display:flex; align-items:center; gap:0.3rem;}
+        
+        /* Leaderboard View Styles */
         .leaderboard-view .leaderboard-list { background: var(--bg-card); border-radius:10px; box-shadow: var(--shadow-lg); overflow:hidden;}
         .leaderboard-item { display:flex; align-items:center; padding: 1.25rem 1.75rem; border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;}
         .leaderboard-item:last-child {border-bottom:none;}
@@ -1385,6 +1484,7 @@ const App = () => {
         .leaderboard-item .team-info p {font-size:0.9rem; color:var(--text-light);}
         .leaderboard-item .team-xp {font-size:1.2rem; font-weight:700; color:var(--color-purple-500); margin-left:auto; text-align:right;}
 
+        /* VEXpert Challenge View Styles */
         .challenge-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .challenge-idle-content { text-align:center; padding: 2rem 0;}
         .challenge-arena-icon { width: 100px; height: 100px; margin: 0 auto 1.5rem; border-radius: 12px; }
@@ -1392,7 +1492,7 @@ const App = () => {
         .challenge-idle-content p { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem; }
         .challenge-action-btn { padding: 0.8rem 1.5rem; border-radius:8px; font-size:1rem; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:0.6rem; border:1px solid transparent; line-height: 1.2;}
         .start-challenge-btn { background-color: var(--color-purple-500); color:white; padding: 1rem 2.5rem; font-size:1.1rem; font-weight:600;}
-        .start-challenge-btn:hover { background-color: var(--color-purple-600); }
+        .start-challenge-btn:hover:not(:disabled) { background-color: var(--color-purple-600); }
 
         .active-challenge .challenge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color); }
         .active-challenge .challenge-header h2 { font-size:1.4rem; font-weight:600; color:var(--text-primary); }
@@ -1409,7 +1509,7 @@ const App = () => {
         .challenge-option-btn.selected:not(.correct):not(.incorrect) { border-color: var(--color-purple-500); background: var(--color-purple-100); font-weight:500;}
         .challenge-option-btn.correct { background-color: var(--color-green-100); border-color: var(--color-green-500); color: var(--color-green-600); font-weight: bold; }
         .challenge-option-btn.incorrect { background-color: var(--color-red-100); border-color: var(--color-red-500); color: var(--color-red-600); }
-        .challenge-option-btn .option-letter { background: #e9ecef; }
+        .challenge-option-btn .option-letter { background: #e9ecef; } /* Neutral background for option letters */
         .challenge-option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-purple-500); color: white; }
         .challenge-option-btn.correct .option-letter { background: var(--color-green-500); color: white; }
         .challenge-option-btn.incorrect .option-letter { background: var(--color-red-500); color: white; }
@@ -1419,7 +1519,7 @@ const App = () => {
         .challenge-feedback .feedback-incorrect { color:var(--color-red-600); font-weight:bold; display:flex; align-items:center; gap:0.5rem; margin-bottom:0.5rem;}
         .challenge-feedback .explanation-text { font-size:0.9rem; color:var(--text-secondary); margin-bottom:1rem; }
         .next-question-btn { background-color: var(--color-blue-500); color:white; margin-top:1rem; }
-        .next-question-btn:hover { background-color: var(--color-blue-600); }
+        .next-question-btn:hover:not(:disabled) { background-color: var(--color-blue-600); }
 
         .challenge-results .results-summary { text-align:center; padding:2rem 0; font-size:1.2rem; color:var(--text-secondary);}
         .challenge-results .xp-earned-challenge { font-size:1.4rem; color:var(--color-green-600); font-weight:bold; margin-top:0.5rem;}
@@ -1429,6 +1529,7 @@ const App = () => {
         .back-dashboard-btn { background-color:#6c757d; color:white; border-color:#5a6268;}
         .back-dashboard-btn:hover { background-color:#5a6268;}
 
+        /* Challenge Configuration Styles */
         .challenge-config {
           margin: 1.5rem auto 2rem;
           max-width: 550px;
@@ -1463,14 +1564,14 @@ const App = () => {
         .config-item select:focus,
         .config-item input[type="number"]:focus {
             border-color: var(--color-purple-500);
-            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25);
+            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); /* Using purple for focus consistent with challenge theme */
             outline: none;
         }
         .category-checkboxes {
           display: flex;
           flex-wrap: wrap;
           gap: 0.8rem;
-          justify-content: flex-start;
+          justify-content: flex-start; /* Align items to the start */
         }
         .category-checkbox-item {
           display: flex;
@@ -1490,16 +1591,17 @@ const App = () => {
         .category-checkbox-item input[type="checkbox"] {
           width: 1rem;
           height: 1rem;
-          accent-color: var(--color-purple-500);
+          accent-color: var(--color-purple-500); /* Match checkbox color to purple theme */
           cursor: pointer;
         }
         .category-checkbox-item label {
             cursor: pointer;
-            font-weight: normal;
+            font-weight: normal; /* Keep label text normal weight */
             color: var(--text-secondary);
         }
 
 
+        /* Responsive Adjustments */
         @media (max-width: 1024px) {
             .nav-items { gap: 0.5rem; }
             .nav-item { padding: 0.6rem 0.8rem; font-size:0.9rem;}
@@ -1545,10 +1647,10 @@ const App = () => {
             .current-team-card .team-card-main {flex-direction:column; align-items:center; text-align:center; gap:1rem;}
             .team-avatar-icon {margin-bottom:0.5rem;}
             .challenge-question-card h3 { font-size:1.2rem; }
-            .category-checkboxes { justify-content: center; }
+            .category-checkboxes { justify-content: center; } /* Center checkboxes on small screens if they wrap */
         }
       `}</style>
-    </div>
+    </>
   );
 };
 

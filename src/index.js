@@ -1,7 +1,7 @@
 // src/index.js (or src/main.jsx)
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.js';
+import App from './App';
 import './index.css'; // <--- Make sure this line exists and points to your CSS file
 import reportWebVitals from './reportWebVitals';
 
