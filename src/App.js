@@ -1,10 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
-// import { jwtDecode } from 'jwt-decode'; // Not strictly needed if relying on Firebase Auth user object primarily
 import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2 } from 'lucide-react';
 
-// Firebase imports
-import { auth, db } from './Firebase'; // Assuming Firebase.js is in src folder and exports auth, db
+import { auth, db } from './Firebase'; 
 import { GoogleAuthProvider as FirebaseGoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, updateDoc, writeBatch,
@@ -12,14 +10,13 @@ import {
   increment, arrayUnion, arrayRemove, orderBy, limit
 } from 'firebase/firestore';
 
-// Console logs to check imported Firebase services
 console.log("[App.js] Value of 'auth' imported from ./Firebase.js:", auth);
 console.log("[App.js] Value of 'db' imported from ./Firebase.js:", db);
 
 const App = () => {
-  const [user, setUser] = useState(null); // Will store Firestore profile
-  const [loading, setLoading] = useState(true); // For initial app load
-  const [actionLoading, setActionLoading] = useState(false); // For specific actions
+  const [user, setUser] = useState(null); 
+  const [loading, setLoading] = useState(true); 
+  const [actionLoading, setActionLoading] = useState(false); 
   const [message, setMessage] = useState('');
   const [currentView, setCurrentView] = useState('login');
   const [selectedModule, setSelectedModule] = useState(null);
@@ -52,7 +49,6 @@ const App = () => {
   const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
   const XP_PER_LEVEL = 500;
 
-  // Learning content (remains client-side, could be moved to Firestore)
   const learningModules = useMemo(() => [
     {
       id: 'intro-vex',
@@ -205,8 +201,6 @@ const App = () => {
     { id: 'vcq10', category: 'Building', difficulty: 'Medium', question: 'Why are bearings important for rotating shafts in VEX?', options: ['They add weight to the robot', 'They reduce friction and support the shaft', 'They help motors run cooler', 'They are only for decoration'], correctAnswerIndex: 1, explanation: 'Bearings reduce friction, prevent shafts from wobbling, and allow for smoother rotation.'}
   ], []);
 
-
-  // --- Firebase Data Fetching Callbacks ---
   const fetchUserProfile = useCallback(async (firebaseUserId) => {
     console.log("Attempting to fetch user profile for Firebase UID:", firebaseUserId);
     if (!db) {
@@ -226,7 +220,7 @@ const App = () => {
       console.error("Error in fetchUserProfile for Firebase UID:", firebaseUserId, error);
       return null;
     }
-  }, []); // `db` dependency removed as it's from module scope, assuming it's stable after init.
+  }, []); 
 
   const fetchUserProgress = useCallback(async (firebaseUserId) => {
     console.log("Attempting to fetch user progress for Firebase UID:", firebaseUserId);
@@ -248,7 +242,7 @@ const App = () => {
     }
   }, []);
 
-  const fetchUserTeam = useCallback(async (teamId) => {
+  const fetchUserTeam = useCallback(async (teamId, currentUserIdToUpdate) => {
     console.log("Attempting to fetch team with ID:", teamId);
     if (!teamId) { setUserTeam(null); console.log("No teamId provided to fetchUserTeam."); return null; }
     if (!db) { console.error("[fetchUserTeam] Firestore 'db' instance is not available."); return null; }
@@ -264,93 +258,123 @@ const App = () => {
       } else {
         setUserTeam(null);
         console.warn("Team document not found for ID:", teamId);
-        if (user && user.id) {
-          console.log("Attempting to clear dangling teamId from user profile:", user.id);
-          const userRef = doc(db, "users", user.id);
+        if (currentUserIdToUpdate) {
+          console.log("Attempting to clear dangling teamId from user profile:", currentUserIdToUpdate);
+          const userRef = doc(db, "users", currentUserIdToUpdate);
           await updateDoc(userRef, { teamId: null });
-          console.log("Dangling teamId cleared from user profile.");
+          setUser(prevUser => {
+            if (prevUser && prevUser.id === currentUserIdToUpdate) {
+              return { ...prevUser, teamId: null };
+            }
+            return prevUser;
+          });
+          console.log("Dangling teamId cleared from user profile:", currentUserIdToUpdate);
         }
         return null;
       }
     } catch (error) {
       console.error("Error in fetchUserTeam for team ID:", teamId, error);
-      setUserTeam(null);
+      setUserTeam(null); 
       return null;
     }
-  }, [user]);
+  }, []); 
 
-
-  // --- Auth State Listener (Primary source of truth for auth state) ---
   useEffect(() => {
     console.log("App.js: Auth listener effect is running.");
     if (!auth) {
       console.error("App.js: Firebase 'auth' service is not available in onAuthStateChanged. Firebase might not be initialized correctly in Firebase.js or imported incorrectly.");
-      setLoading(false); // Stop loading, but app will likely be broken.
+      setLoading(false); 
       setMessage("Critical Firebase Error: Auth service not loaded. Please check console and Firebase.js configuration.");
-      return; // Exit if auth is not available
+      return; 
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseAuthUser) => {
       console.log("App.js: onAuthStateChanged triggered. Firebase Auth User:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
+      
       try {
         if (firebaseAuthUser) {
           console.log("App.js: Firebase Auth User signed in. UID:", firebaseAuthUser.uid);
+          setMessage("Firebase authenticated. Loading your Vexcel profile..."); 
+          
           let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
 
           if (!userProfile) {
             console.log("App.js: No Firestore profile for UID:", firebaseAuthUser.uid, ". Creating new profile.");
+            setMessage("Welcome! Creating your Vexcel profile...");
             const newUserProfileData = {
               id: firebaseAuthUser.uid,
-              name: firebaseAuthUser.displayName || `User${Math.floor(Math.random() * 10000)}`,
-              email: firebaseAuthUser.email,
+              name: firebaseAuthUser.displayName || `User${firebaseAuthUser.uid.substring(0,5)}`,
+              email: firebaseAuthUser.email || `${firebaseAuthUser.uid.substring(0,5)}@example.com`,
               avatar: firebaseAuthUser.photoURL || `https://source.boringavatars.com/beam/120/${firebaseAuthUser.email || firebaseAuthUser.uid}?colors=264653,2a9d8f,e9c46a,f4a261,e76f51`,
               xp: 0, level: 1, streak: 0, teamId: null,
               createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
             };
-            if (!db) { console.error("App.js: Firestore 'db' instance is not available for creating profile."); throw new Error("Firestore not available");}
+            console.log("[App.js] Attempting to create user profile with data:", JSON.stringify(newUserProfileData));
+            if (!db) { 
+              console.error("App.js: Firestore 'db' instance is NOT available for creating profile."); 
+              throw new Error("Firestore not available for profile creation. Check Firebase.js and initialization logs.");
+            }
             await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
             userProfile = newUserProfileData;
-            console.log("App.js: New Firestore profile created for UID:", firebaseAuthUser.uid);
+            console.log("App.js: New Firestore profile CREATED for UID:", firebaseAuthUser.uid);
           } else {
-            console.log("App.js: Existing Firestore profile found for UID:", firebaseAuthUser.uid, ". Updating profile.");
+            console.log("App.js: Existing Firestore profile FOUND for UID:", firebaseAuthUser.uid, ". Updating profile.");
+             setMessage("Profile found. Finalizing login...");
             const profileUpdates = { lastLogin: serverTimestamp() };
-            if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) profileUpdates.name = firebaseAuthUser.displayName;
-            if (firebaseAuthUser.photoURL && firebaseAuthUser.photoURL !== userProfile.avatar) profileUpdates.avatar = firebaseAuthUser.photoURL;
+            if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) {
+              profileUpdates.name = firebaseAuthUser.displayName;
+            }
+            if (firebaseAuthUser.photoURL && firebaseAuthUser.photoURL !== userProfile.avatar) {
+              profileUpdates.avatar = firebaseAuthUser.photoURL;
+            }
+            if (firebaseAuthUser.email && firebaseAuthUser.email !== userProfile.email) {
+                profileUpdates.email = firebaseAuthUser.email;
+            }
             
-            if (Object.keys(profileUpdates).length > 0) { // Only update if there are changes
-                if (!db) { console.error("App.js: Firestore 'db' instance is not available for updating profile."); throw new Error("Firestore not available");}
+            if (Object.keys(profileUpdates).length > 0) { 
+                console.log("[App.js] Attempting to update user profile with data:", JSON.stringify(profileUpdates));
+                if (!db) { 
+                  console.error("App.js: Firestore 'db' instance is NOT available for updating profile."); 
+                  throw new Error("Firestore not available for profile update. Check Firebase.js and initialization logs.");
+                }
                 await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
             }
-            userProfile = { ...userProfile, ...profileUpdates }; // Ensure local userProfile is updated
-            console.log("App.js: Firestore profile updated for UID:", firebaseAuthUser.uid);
+            userProfile = { ...userProfile, ...profileUpdates }; 
+            console.log("App.js: Firestore profile UPDATED for UID:", firebaseAuthUser.uid);
           }
 
-          setUser(userProfile); // Set user state with the fetched/created/updated profile
+          setUser(userProfile); 
           console.log("App.js: User state (Firestore profile) set. Fetching progress for UID:", firebaseAuthUser.uid);
           await fetchUserProgress(firebaseAuthUser.uid);
 
           if (userProfile.teamId) {
             console.log("App.js: User has teamId:", userProfile.teamId, ". Fetching team data.");
-            await fetchUserTeam(userProfile.teamId);
+            await fetchUserTeam(userProfile.teamId, userProfile.id);
           } else {
             setUserTeam(null);
             console.log("App.js: User has no teamId.");
           }
-          // Only navigate to dashboard if coming from login or if view isn't set.
-          // This prevents overriding currentView if onAuthStateChanged fires for token refresh.
-          setCurrentView(prevView => (prevView === 'login' || !prevView) ? 'dashboard' : prevView);
-          console.log("App.js: User setup complete.");
+          
+          setCurrentView('dashboard'); 
+          setMessage(''); 
+          console.log("App.js: User setup complete. View set to dashboard.");
 
         } else {
           console.log("App.js: No Firebase Auth User signed in. Resetting user state.");
           setUser(null); setUserTeam(null); setUserProgress({});
           setCurrentView('login');
           setSelectedModule(null); setCurrentLesson(null);
+          setMessage(''); 
         }
       } catch (error) {
         console.error("App.js: CRITICAL ERROR within onAuthStateChanged async block:", error);
-        setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
-        setMessage("An error occurred handling authentication. Please check console and try again.");
+        console.error("App.js: Firestore operation error details:", error.code, error.message, error.stack);
+        setUser(null); 
+        setUserTeam(null); 
+        setUserProgress({}); 
+        setCurrentView('login'); 
+        setMessage(`Error setting up your session: ${error.message}. Please check the console and Firebase project setup (Firestore enabled & correct rules).`);
+        setActionLoading(false); 
       } finally {
         console.log("App.js: onAuthStateChanged finally block. setLoading(false).");
         setLoading(false);
@@ -361,7 +385,7 @@ const App = () => {
       console.log("App.js: Auth listener cleaning up.");
       unsubscribe();
     };
-  }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]);
+  }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]); 
 
 
   useEffect(() => {
@@ -380,10 +404,10 @@ const App = () => {
         setChallengeTimer(prevTime => prevTime - 1);
       }, 1000);
     } else if (challengeState === 'active' && challengeTimer === 0 && !showChallengeAnswer) {
-      handleChallengeAnswer(null); // Automatically submit if timer runs out
+      handleChallengeAnswer(null); 
     }
     return () => clearInterval(interval);
-  }, [challengeState, challengeTimer, showChallengeAnswer]); // handleChallengeAnswer removed from deps to avoid loop
+  }, [challengeState, challengeTimer, showChallengeAnswer]); 
 
 
   const handleLoginSuccess = async (credentialResponse) => {
@@ -394,7 +418,7 @@ const App = () => {
         setActionLoading(false);
         return;
     }
-    setMessage('Processing Firebase sign-in...');
+    setMessage('Successfully authenticated with Google. Signing into Vexcel...'); 
     setActionLoading(true);
     try {
       const idToken = credentialResponse.credential;
@@ -402,21 +426,19 @@ const App = () => {
       console.log("App.js: Attempting Firebase signInWithCredential...");
       const firebaseAuthResult = await signInWithCredential(auth, credential);
       console.log("App.js: Firebase signInWithCredential successful. Firebase User UID:", firebaseAuthResult.user.uid);
-      // onAuthStateChanged will now handle the rest: fetching/creating profile, setting state, navigation.
-      setMessage(`Successfully signed in with Firebase as ${firebaseAuthResult.user.displayName || firebaseAuthResult.user.email}!`);
     } catch (error) {
       console.error("App.js: Error in handleLoginSuccess (Firebase signInWithCredential):", error);
-      // Check for specific Firebase error codes if needed
       if (error.code === 'auth/configuration-not-found') {
           setMessage(`Firebase Config Error: ${error.message}. Please ensure Firebase is correctly configured with your project details in Firebase.js.`);
-      } else {
+      } else if (error.code === 'auth/network-request-failed') {
+           setMessage(`Network error during Firebase sign-in: ${error.message}. Please check your internet connection.`);
+      }
+      else {
           setMessage(`Firebase sign-in error: ${error.message}. Please try again.`);
       }
-      googleLogout(); // Ensure Google session is also cleared on Firebase error
-    } finally {
-      console.log("App.js: handleLoginSuccess finally block. setActionLoading(false).");
-      setActionLoading(false); // Action loading should be false here, main loading is handled by onAuthStateChanged
-    }
+      googleLogout(); 
+      setActionLoading(false); 
+    } 
   };
 
 
@@ -431,17 +453,14 @@ const App = () => {
     if (!auth) {
         console.error("App.js: FATAL in handleLogout - Firebase 'auth' service is not available!");
         setMessage("Critical Firebase Error: Auth service not loaded. Cannot process logout.");
-        // Manually reset state as a fallback
         setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
         return;
     }
     setActionLoading(true);
     try {
-      await firebaseSignOut(auth); // Triggers onAuthStateChanged
-      googleLogout(); // Clear Google session
+      await firebaseSignOut(auth); 
+      googleLogout(); 
       console.log("App.js: Firebase sign out and Google logout successful.");
-      setMessage('You have been logged out successfully.');
-      // onAuthStateChanged will handle resetting user state and view to 'login'
     } catch (error) {
       console.error("App.js: Error during logout:", error);
       setMessage('Error during logout.');
@@ -451,30 +470,29 @@ const App = () => {
   };
 
   const navigate = (view, data = null) => {
-    setMessage(''); // Clear messages on navigation
+    setMessage(''); 
     setCurrentView(view);
     if (data) {
       if (view === 'module') {
         const moduleData = learningModules.find(m => m.id === (data.id || data));
         setSelectedModule(moduleData);
-        setCurrentLesson(null); // Reset lesson when navigating to module view
+        setCurrentLesson(null); 
       } else if (view === 'lessonContent' && data.lesson && data.moduleId) {
         const moduleForLesson = learningModules.find(m => m.id === data.moduleId);
         if (moduleForLesson) {
-            setSelectedModule(moduleForLesson); // Ensure module context is set
+            setSelectedModule(moduleForLesson); 
             setCurrentLesson(data.lesson);
         } else {
             setMessage("Error: Module context for lesson not found.");
-            setCurrentView('dashboard'); // Fallback
+            setCurrentView('dashboard'); 
         }
       } else if (view === 'quiz') setQuizData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
       else if (view === 'game') setGameData({ moduleId: data.moduleId, lessonId: data.lesson.id, lesson: data.lesson });
     } else {
-      // Reset contextual states if navigating to a top-level view without specific data
       if (!['module', 'lessonContent', 'quiz', 'game', 'challenge'].includes(view)) {
         setSelectedModule(null); setCurrentLesson(null); setQuizData(null); setGameData(null);
       }
-      if(view === 'challenge') { // Reset challenge state when navigating to it
+      if(view === 'challenge') { 
         setChallengeState('idle');
         setChallengeScore(0);
         setCurrentChallengeQuestionIdx(0);
@@ -484,16 +502,14 @@ const App = () => {
     }
   };
 
-  // Auto-clear messages
-  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 5000); return () => clearTimeout(t); } }, [message]);
+  useEffect(() => { if (message) { const t = setTimeout(() => setMessage(''), 7000); return () => clearTimeout(t); } }, [message]);
 
-  // Level up logic
   useEffect(() => {
     if (user && user.xp !== undefined && user.level !== undefined && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) {
       const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1;
-      setUser(prev => ({ ...prev, level: newLevel })); // Update local state
+      setUser(prev => ({ ...prev, level: newLevel })); 
       setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`);
-      if(user.id && db) { // Update Firestore
+      if(user.id && db) { 
           const userRef = doc(db, "users", user.id);
           updateDoc(userRef, { level: newLevel })
             .then(() => console.log("App.js: Level updated in Firestore for UID:", user.id))
@@ -502,7 +518,7 @@ const App = () => {
           console.error("App.js: Cannot update level in Firestore, 'db' instance is not available.");
       }
     }
-  }, [user, XP_PER_LEVEL]); // db removed from deps
+  }, [user, XP_PER_LEVEL]); 
 
 
   const handleCompleteItem = async (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
@@ -516,12 +532,9 @@ const App = () => {
 
     try {
       const batch = writeBatch(db);
-      // Increment user's total XP
       batch.update(userRef, { xp: increment(xpEarned) });
-
-      // Update module progress
-      const sanitizedLessonId = lessonId.replace(/\./g, '_'); // Sanitize for Firestore field names
-      const currentModuleProgSnap = await getDoc(progressDocRef); // Get current progress for the module
+      const sanitizedLessonId = lessonId.replace(/\./g, '_'); 
+      const currentModuleProgSnap = await getDoc(progressDocRef); 
       let currentModuleXp = 0;
       let existingLessons = {};
 
@@ -530,32 +543,25 @@ const App = () => {
           currentModuleXp = currentData.moduleXp || 0;
           existingLessons = currentData.lessons || {};
       }
-      // Update specific lesson's status and score within the module's progress
       const updatedLessonData = { ...existingLessons, [sanitizedLessonId]: { completed: true, score: score } };
       batch.set(progressDocRef, { lessons: updatedLessonData, moduleXp: currentModuleXp + xpEarned }, { merge: true });
 
-      // If user is in a team, increment team's total XP
       if (userTeam && userTeam.id) {
         const teamRef = doc(db, "teams", userTeam.id);
         batch.update(teamRef, { totalXP: increment(xpEarned) });
       }
 
-      await batch.commit(); // Commit all batched writes
+      await batch.commit(); 
       console.log("App.js: Item completion saved to Firebase.");
 
-      // Update local state for immediate UI feedback
       setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
       setUserProgress(prev => ({ ...prev, [moduleId]: { ...prev[moduleId] || {lessons:{}, moduleXp:0}, lessons: updatedLessonData, moduleXp: (prev[moduleId]?.moduleXp || 0) + xpEarned }}));
       if (userTeam) {
         const updatedTeamTotalXP = (userTeam.totalXP || 0) + xpEarned;
         setUserTeam(prevTeam => ({ ...prevTeam, totalXP: updatedTeamTotalXP }));
-        // Update allTeams if the current user's team is in that list
         setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? { ...t, totalXP: updatedTeamTotalXP } : t));
       }
-
-      // Refresh selectedModule to reflect progress if it's the one being worked on
-      // This is tricky; a simple spread might not re-trigger child component updates if object ref is same.
-      // Consider fetching module data again or a more robust state update for selectedModule if direct UI update is needed.
+      
       if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
 
 
@@ -569,7 +575,7 @@ const App = () => {
   };
 
   const handleJoinTeam = async (teamCodeToJoinArg = joinTeamCodeInput) => {
-    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput; // Handle direct call with code
+    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput; 
     if (!teamCodeToJoin.trim()) { setMessage("Please enter a team code."); return; }
     if (userTeam) { setMessage("You are already in a team."); return; }
     if (!user || !user.id) { setMessage("User not logged in."); return; }
@@ -585,14 +591,12 @@ const App = () => {
         setMessage("Invalid team code or team not found."); setActionLoading(false); return;
       }
 
-      const teamDocSnap = querySnapshot.docs[0]; // Assuming team codes are unique
+      const teamDocSnap = querySnapshot.docs[0]; 
       const teamToJoinData = { id: teamDocSnap.id, ...teamDocSnap.data() };
 
-      // Check if user is already a member (edge case or for UI consistency)
       if (teamToJoinData.memberIds && teamToJoinData.memberIds.includes(user.id)) {
           setMessage(`You are already a member of ${teamToJoinData.name}.`);
-          setUserTeam(teamToJoinData); // Ensure local state is consistent
-          // Ensure user's profile also has this teamId (consistency check)
+          setUserTeam(teamToJoinData); 
           const userRefForConsistency = doc(db, "users", user.id);
           await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
           setActionLoading(false); return;
@@ -600,21 +604,20 @@ const App = () => {
 
       const batch = writeBatch(db);
       const teamRef = doc(db, "teams", teamToJoinData.id);
-      batch.update(teamRef, { memberIds: arrayUnion(user.id) }); // Add user to team's member list
+      batch.update(teamRef, { memberIds: arrayUnion(user.id) }); 
 
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: teamToJoinData.id }); // Set teamId on user's profile
+      batch.update(userRef, { teamId: teamToJoinData.id }); 
 
       await batch.commit();
 
-      // Fetch the updated team data to reflect new member count, etc.
       const updatedTeamSnap = await getDoc(teamRef);
       const finalTeamData = {id: updatedTeamSnap.id, ...updatedTeamSnap.data()};
 
-      setUserTeam(finalTeamData); // Update local state
-      setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t)); // Update in allTeams list
+      setUserTeam(finalTeamData); 
+      setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t)); 
       setMessage(`Successfully joined team: ${finalTeamData.name}!`);
-      setJoinTeamCodeInput(''); // Clear input
+      setJoinTeamCodeInput(''); 
     } catch (error) {
       console.error("App.js: Error joining team:", error);
       setMessage("Failed to join team. " + error.message);
@@ -637,24 +640,23 @@ const App = () => {
         name: createTeamNameInput.trim(),
         code: newTeamCode,
         description: `A brand new Vexcel team led by ${user.name}!`,
-        totalXP: user.xp || 0, // Team starts with leader's XP
-        memberIds: [user.id], // Leader is the first member
+        totalXP: user.xp || 0, 
+        memberIds: [user.id], 
         creatorId: user.id,
         createdAt: serverTimestamp(),
-        // 'members' count can be derived from memberIds.length or stored explicitly
       };
 
       const teamColRef = collection(db, "teams");
-      const teamDocRef = await addDoc(teamColRef, newTeamData); // Create new team document
+      const teamDocRef = await addDoc(teamColRef, newTeamData); 
 
       const userRef = doc(db, "users", user.id);
-      await updateDoc(userRef, { teamId: teamDocRef.id }); // Update user's profile with new teamId
+      await updateDoc(userRef, { teamId: teamDocRef.id }); 
 
-      const createdTeamForState = { id: teamDocRef.id, ...newTeamData, members: 1 }; // For local state
+      const createdTeamForState = { id: teamDocRef.id, ...newTeamData, members: 1 }; 
       setUserTeam(createdTeamForState);
-      setAllTeams(prev => [...prev, createdTeamForState]); // Add to local list of all teams
+      setAllTeams(prev => [...prev, createdTeamForState]); 
       setMessage(`Team "${createdTeamForState.name}" created! Your Team Code is: ${newTeamCode}`);
-      setCreateTeamNameInput(''); // Clear input
+      setCreateTeamNameInput(''); 
     } catch (error) {
       console.error("App.js: Error creating team:", error);
       setMessage("Failed to create team. " + error.message);
@@ -664,26 +666,24 @@ const App = () => {
   };
 
   const handleLeaveTeam = async () => {
-    if (!userTeam || !userTeam.id || !user || !user.id) return; // Basic checks
+    if (!userTeam || !userTeam.id || !user || !user.id) return; 
     if (!db) {setMessage("Database service unavailable."); return;}
 
     console.log("App.js: handleLeaveTeam called for team:", userTeam.id, "by user:", user.id);
     setActionLoading(true);
     try {
-      const teamName = userTeam.name; // For message
+      const teamName = userTeam.name; 
       const batch = writeBatch(db);
 
       const teamRef = doc(db, "teams", userTeam.id);
-      batch.update(teamRef, { memberIds: arrayRemove(user.id) }); // Remove user from team's member list
+      batch.update(teamRef, { memberIds: arrayRemove(user.id) }); 
 
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: null }); // Clear teamId from user's profile
+      batch.update(userRef, { teamId: null }); 
 
       await batch.commit();
 
-      // Update local state
       setUserTeam(null);
-      // Update allTeams list if it's being displayed/cached
       setAllTeams(prevTeams =>
         prevTeams.map(t =>
           (t.id === userTeam.id ?
@@ -699,50 +699,59 @@ const App = () => {
       setActionLoading(false);
     }
   };
-
-  // Fetch all teams for browsing or leaderboard
+  
   const fetchAllTeamsForBrowse = useCallback(async () => {
-    console.log("App.js: fetchAllTeamsForBrowse called. Current view:", currentView);
-    if (!db) { console.error("App.js: fetchAllTeamsForBrowse - DB not available."); return; }
-
-    // Only fetch if on relevant view and teams aren't already loaded (or to refresh)
+    if (!db) { 
+        console.error("[fetchAllTeamsForBrowse] DB not available. Aborting fetch.");
+        setMessage("Database error. Cannot fetch teams.");
+        return; 
+    }
     if (currentView === 'browseTeams' || currentView === 'leaderboard') {
+      console.log(`[fetchAllTeamsForBrowse] Called for view: ${currentView}. Setting actionLoading TRUE.`);
       setActionLoading(true);
       try {
         const teamsColRef = collection(db, "teams");
-        let q = teamsColRef; // Default query
+        let q;
         if (currentView === 'leaderboard') {
-          q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50)); // Order for leaderboard
+          q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50));
+          console.log("[fetchAllTeamsForBrowse] Querying for LEADERBOARD (orderBy totalXP desc, limit 50).");
+        } else { 
+          q = query(teamsColRef, orderBy("createdAt", "desc"), limit(100)); 
+          console.log("[fetchAllTeamsForBrowse] Querying for BROWSE (orderBy createdAt desc, limit 100).");
         }
-        // Add other orderBy or where clauses if needed for browseTeams, e.g., orderBy("memberCount", "desc")
-
+        
+        console.log(`[fetchAllTeamsForBrowse] Executing getDocs() for ${currentView}...`);
         const querySnapshot = await getDocs(q);
+        console.log(`[fetchAllTeamsForBrowse] getDocs() completed. Found ${querySnapshot.docs.length} teams for ${currentView}.`);
+        
         const loadedTeams = querySnapshot.docs.map(docSnap => ({
           id: docSnap.id,
           ...docSnap.data(),
-          members: docSnap.data().memberIds?.length || 0 // Ensure 'members' count is derived
+          members: docSnap.data().memberIds?.length || 0 
         }));
         setAllTeams(loadedTeams);
-        console.log("App.js: Teams fetched for browse/leaderboard:", loadedTeams.length);
+        console.log(`[fetchAllTeamsForBrowse] setAllTeams done for ${currentView}. Team count: ${loadedTeams.length}`);
       } catch (error) {
-        console.error("App.js: Error fetching teams for browse/leaderboard:", error);
-        setMessage("Could not load teams list.");
+        console.error(`[fetchAllTeamsForBrowse] Error fetching teams for ${currentView}:`, error);
+        console.error(`[fetchAllTeamsForBrowse] Error details: Code: ${error.code}, Message: ${error.message}`);
+        setMessage(`Could not load teams for ${currentView}: ${error.message}. Check console for Firestore errors (e.g. missing index).`);
       } finally {
+        console.log(`[fetchAllTeamsForBrowse] FINALLY block. Setting actionLoading FALSE for ${currentView}.`);
         setActionLoading(false);
       }
+    } else {
+        console.log(`[fetchAllTeamsForBrowse] Not fetching. Current view is ${currentView}, not browseTeams or leaderboard.`);
     }
-  }, [currentView]); // db removed
+  }, [currentView]); 
 
-  // Effect to trigger fetchAllTeamsForBrowse when view changes to relevant ones
   useEffect(() => {
     fetchAllTeamsForBrowse();
-  }, [fetchAllTeamsForBrowse]); // This will run when fetchAllTeamsForBrowse (and its dep currentView) changes
+  }, [fetchAllTeamsForBrowse]); 
 
 
   const startVexpertChallenge = () => {
     console.log("App.js: startVexpertChallenge called.");
-    setActionLoading(true); // Indicate loading while preparing
-    // ... (rest of the logic is fine) ...
+    setActionLoading(true); 
     if (selectedChallengeCategories.length === 0) {setMessage("Please select at least one category."); setActionLoading(false); return;}
     const filtered = vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category));
     if (filtered.length === 0) {setMessage("No questions for selected categories."); setActionLoading(false); return;}
@@ -757,30 +766,28 @@ const App = () => {
     const shuffled = [...filtered].sort(() => 0.5 - Math.random());
     setChallengeQuestions(shuffled.slice(0, count));
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0); setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
-    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false); // Set to active and stop loading
+    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false); 
     setMessage(`Challenge started with ${count} questions! Good luck!`);
   };
 
 
   const handleChallengeAnswer = (selectedIndex) => {
-    if (showChallengeAnswer) return; // Prevent re-answering
-    setShowChallengeAnswer(true); // Show feedback
-    setChallengeSelectedAnswer(selectedIndex); // Record selected answer
+    if (showChallengeAnswer) return; 
+    setShowChallengeAnswer(true); 
+    setChallengeSelectedAnswer(selectedIndex); 
     if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
-      setChallengeScore(s => s + 1); // Increment score if correct
+      setChallengeScore(s => s + 1); 
     }
-    // Timer is cleared by useEffect when showChallengeAnswer becomes true
   };
 
   const handleNextChallengeQuestion = async () => {
-    setShowChallengeAnswer(false); // Hide feedback for next question
-    setChallengeSelectedAnswer(null); // Reset selected answer
+    setShowChallengeAnswer(false); 
+    setChallengeSelectedAnswer(null); 
 
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
-      setCurrentChallengeQuestionIdx(i => i + 1); // Move to next question
-      setChallengeTimer(QUESTION_TIMER_DURATION); // Reset timer
+      setCurrentChallengeQuestionIdx(i => i + 1); 
+      setChallengeTimer(QUESTION_TIMER_DURATION); 
     } else {
-      // Challenge finished
       setChallengeState('results');
       const xp = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
       console.log("App.js: Challenge finished. Score:", challengeScore, "XP:", xp);
@@ -792,12 +799,11 @@ const App = () => {
           const userRef = doc(db, "users", user.id);
           batch.update(userRef, { xp: increment(xp) });
 
-          if (userTeam && userTeam.id) { // Also update team XP if applicable
+          if (userTeam && userTeam.id) { 
             batch.update(doc(db, "teams", userTeam.id), { totalXP: increment(xp) });
           }
           await batch.commit();
 
-          // Update local state
           setUser(prev => ({ ...prev, xp: (prev.xp || 0) + xp }));
           if (userTeam) {
             const newTeamXp = (userTeam.totalXP || 0) + xp;
@@ -822,13 +828,10 @@ const App = () => {
     setChallengeState('idle'); setChallengeQuestions([]);
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0);
     setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
-    // numChallengeQuestionsInput and selectedChallengeCategories remain as user configured
     console.log("App.js: Challenge reset to configuration screen.");
   };
 
-
-  // --- Sub-components (JSX remains largely the same) ---
-  const Navigation = () => ( /* ... existing JSX ... */ <nav className="nav">
+  const Navigation = () => ( <nav className="nav">
       <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
         <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
         <span className="brand-text">Vexcel</span>
@@ -849,7 +852,7 @@ const App = () => {
       )}
     </nav>
   );
-  const Dashboard = () => { /* ... existing JSX ... */ if (!user) return null;
+  const Dashboard = () => { if (!user) return null;
     const modulesInProgress = learningModules.filter(m => {
         const prog = userProgress[m.id];
         return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
@@ -924,7 +927,7 @@ const App = () => {
         </div>
     </div>
   )};
-  const ModuleView = () => { /* ... existing JSX ... */ if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
+  const ModuleView = () => { if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
     const Icon = selectedModule.icon;
     return (
@@ -966,7 +969,7 @@ const App = () => {
       </div>
     );
   };
-  const LessonContentView = () => { /* ... existing JSX ... */ if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
+  const LessonContentView = () => { if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
     const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
     const lessonState = moduleProg.lessons[currentLesson.id.replace(/\./g, '_')] || { completed: false };
     const isCompleted = lessonState.completed;
@@ -979,19 +982,18 @@ const App = () => {
       const nextLesson = selectedModule.content.lessons[currentIndex + 1];
       if (nextLesson) {
         const nextLessonProg = moduleProg.lessons[nextLesson.id.replace(/\./g, '_')] || { completed: false };
-        // Check if next lesson should be unlocked (current must be completed *now* or already was)
-        const currentNowCompleted = true; // Assume completion after clicking
-        const isNextLocked = !(currentNowCompleted || nextLessonProg.completed) && currentIndex + 1 > 0; // Simplified, re-evaluate lock logic if complex dependencies exist
+        const currentNowCompleted = true; 
+        const isNextLocked = !(currentNowCompleted || nextLessonProg.completed) && currentIndex + 1 > 0; 
 
-        if (isNextLocked) { // If next is still locked (e.g. if completion failed or logic is strict)
+        if (isNextLocked) { 
             navigate('module', { id: selectedModule.id }); return;
         }
 
         if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
         else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
-        else navigate('module', { id: selectedModule.id }); // Fallback
-      } else navigate('module', { id: selectedModule.id }); // No next lesson, back to module
+        else navigate('module', { id: selectedModule.id }); 
+      } else navigate('module', { id: selectedModule.id }); 
     };
 
     return (
@@ -1009,7 +1011,7 @@ const App = () => {
       </div>
     );
   };
-  const QuizView = () => { /* ... existing JSX ... */ const [currentQIdx, setCurrentQIdx] = useState(0);
+  const QuizView = () => { const [currentQIdx, setCurrentQIdx] = useState(0);
     const [selectedAns, setSelectedAns] = useState(null);
     const [showRes, setShowRes] = useState(false);
     const [quizScore, setQuizScore] = useState(0);
@@ -1034,15 +1036,15 @@ const App = () => {
         setCurrentQIdx(i => i + 1);
       } else {
         setShowRes(true);
-        const finalScore = quizScore; // Use captured score for this attempt
-        const passPercent = 70; // Example pass percentage
+        const finalScore = quizScore; 
+        const passPercent = 70; 
         const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
         if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
           handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalScore, quizData.lesson.xp);
         } else if (currentModuleProgress.completed) {
             setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
         }
-        else { // Failed to pass or already passed but reviewing
+        else { 
             setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
         }
       }
@@ -1101,7 +1103,7 @@ const App = () => {
       </div>
     );
   };
-  const GameView = () => { /* ... existing JSX ... */ if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
+  const GameView = () => { if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
     const sanitizedLessonId = gameData.lessonId.replace(/\./g, '_');
     const gameContent = sampleGames[sanitizedLessonId];
     if (!gameContent) return <p className="error-message">Game content not found for: {gameData.lessonId}</p>;
@@ -1115,7 +1117,7 @@ const App = () => {
       } else {
         setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
       }
-      navigate('module', {id: gameData.moduleId}); // Navigate back to module after completion/review
+      navigate('module', {id: gameData.moduleId}); 
     };
 
     return (
@@ -1133,7 +1135,7 @@ const App = () => {
       </div>
     );
   };
-  const TeamsView = () => { /* ... existing JSX ... */ return (
+  const TeamsView = () => { return (
     <div className="teams-view">
       <div className="view-header"> <Users className="header-icon" /> <h1>My Team</h1> <p>Manage your team or join/create a new one.</p> </div>
       {userTeam ? (
@@ -1171,7 +1173,7 @@ const App = () => {
     </div>
   );
   };
-  const BrowseTeamsView = () => { /* ... existing JSX ... */ const [searchTerm, setSearchTerm] = useState('');
+  const BrowseTeamsView = () => { const [searchTerm, setSearchTerm] = useState('');
     const filteredAndSortedTeams = useMemo(() =>
         allTeams
             .filter(team =>
@@ -1179,13 +1181,12 @@ const App = () => {
                 (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
                 team.code.toLowerCase().includes(searchTerm.toLowerCase())
             )
-            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)), // Sort by XP descending
+            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)), 
         [allTeams, searchTerm]
     );
 
     useEffect(() => {
-        // Fetch teams when the component mounts or view becomes 'browseTeams', if not already loaded
-        if (currentView === 'browseTeams' && allTeams.length === 0) { // Fetch only if needed
+        if (currentView === 'browseTeams' && allTeams.length === 0) { 
             fetchAllTeamsForBrowse();
         }
     }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
@@ -1196,7 +1197,7 @@ const App = () => {
         <div className="view-header"> <Eye className="header-icon" /> <h1>Browse All Teams</h1> <p>Find a team, see who's competing, or get inspired!</p> </div>
         <div className="search-bar-container"> <Search className="search-icon" /> <input type="text" placeholder="Search by name, description, or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="teams-search-input" /> </div>
         {actionLoading && allTeams.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
-        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? ( // Check currentView to ensure this message is contextual
+        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? ( 
           <p className="info-message">No teams exist yet. Go to "My Team" to create one!</p>
         ) : filteredAndSortedTeams.length > 0 ? (
           <div className="teams-grid">
@@ -1218,17 +1219,17 @@ const App = () => {
       </div>
     );
   };
-  const LeaderboardView = () => { /* ... existing JSX ... */ const sortedLeaderboard = useMemo(() =>
+  const LeaderboardView = () => { const sortedLeaderboard = useMemo(() =>
         [...allTeams].sort((a, b) => (b.totalXP || 0) - (a.totalXP || 0)).map((team, index) => ({ ...team, rank: index + 1 })),
         [allTeams]
     );
 
     useEffect(() => {
-        // Fetch teams when the component mounts or view becomes 'leaderboard', if not already loaded
-        if (currentView === 'leaderboard' && allTeams.length === 0) { // Fetch only if needed
+        if (currentView === 'leaderboard' && allTeams.length === 0 && !actionLoading) { 
+            console.log("[LeaderboardView useEffect] Conditions met for fetching teams (view, empty, not loading).");
             fetchAllTeamsForBrowse();
         }
-    }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
+    }, [currentView, allTeams.length, fetchAllTeamsForBrowse, actionLoading]); 
 
     return (
       <div className="leaderboard-view">
@@ -1241,12 +1242,12 @@ const App = () => {
               <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : team.members) || 0} members • Code: {team.code}</p></div>
               <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
             </div>
-          )) : !actionLoading && <p className="info-message">The leaderboard is currently empty. Create or join a team to get started!</p>}
+          )) : !actionLoading && <p className="info-message">The leaderboard is currently empty or no teams were found. Create or join a team to get started!</p>}
         </div>
       </div>
     );
   };
-  const VexpertChallengeView = () => { /* ... existing JSX ... */ if (actionLoading && challengeState === 'idle') {
+  const VexpertChallengeView = () => { if (actionLoading && challengeState === 'idle') {
         return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
     }
 
@@ -1271,7 +1272,7 @@ const App = () => {
                   disabled={actionLoading}
                 >
                   {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
-                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) // Unique, valid counts
+                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) 
                     .sort((a,b) => a-b)
                     .map(num => (
                       <option key={num} value={num}>
@@ -1387,7 +1388,7 @@ const App = () => {
     }
     return <div className="challenge-view"><p>Loading challenge state...</p></div>;
   };
-  const LoginView = () => { /* ... existing JSX ... */ return (
+  const LoginView = () => { return (
     <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
       <div className="login-container">
         <div className="login-card">
@@ -1396,31 +1397,29 @@ const App = () => {
             <h1>Vexcel</h1>
             <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
           </div>
-          {/* Show this if actionLoading is true (specific to login process) */}
           {actionLoading && currentView === 'login' && (
             <div className="loading-section login-specific-loader">
               <div className="spinner"></div>
               <p>Processing Sign-In...</p>
             </div>
           )}
-          {message && !user && currentView === 'login' && ( // Only show login-specific messages here
+          {message && !user && currentView === 'login' && ( 
             <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') || message.includes('logged out') ? 'info' : 'success')}`}>
               {message}
             </div>
           )}
-          {/* Show GoogleLogin button only if not actionLoading AND no user is authenticated yet */}
           {!actionLoading && !user && (
             <div className="login-section">
               <GoogleLogin
                 onSuccess={handleLoginSuccess}
                 onError={handleLoginError}
-                useOneTap={true} // Consider setting to false for more explicit login flow during debugging
-                auto_select={false} // Recommended to be false for clearer UX
+                useOneTap={true} 
+                auto_select={false} 
                 theme="outline"
                 size="large"
-                text="signin_with" // "continue_with" or "signup_with" also options
-                shape="rectangular" // "pill", "circle", "square"
-                width="300px" // Can be customized
+                text="signin_with" 
+                shape="rectangular" 
+                width="300px" 
               />
             </div>
           )}
@@ -1437,18 +1436,12 @@ const App = () => {
   );
   };
 
-  // --- Main App Render Logic ---
-  // This 'loading' state is for the initial Firebase auth check.
   if (loading) {
-    // If 'user' is already populated, it means onAuthStateChanged has run, found a user,
-    // and we are likely in the process of fetching their specific data or it's a quick re-render
-    // before setLoading(false) in onAuthStateChanged's finally block is hit.
-    // If 'user' is null, it's the very initial app spin-up before auth state is known.
-    const loadingMessage = user ? "Loading Vexcel Dashboard..." : "Initializing Vexcel Platform...";
+    const loadingMessageText = message || (user ? "Loading Vexcel Dashboard..." : "Initializing Vexcel Platform...");
     return (
       <div className="full-page-loader">
         <div className="spinner"></div>
-        <p>{loadingMessage}</p>
+        <p>{loadingMessageText}</p>
       </div>
     );
   }
@@ -1461,10 +1454,10 @@ const App = () => {
         <div className="app">
           <Navigation />
           <main className="main-content">
-            {message && (currentView !== 'login' || user) && // Show app messages if not on login view or if user is logged in
+            {message && (currentView !== 'login' || user) && 
                 <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')||message.includes('Successfully')||message.includes('created') ?'success':'info')}`}>{message}</div>
             }
-            {actionLoading && currentView !== 'login' && ( // Show action loader for page transitions etc., but not on login view itself
+            {actionLoading && currentView !== 'login' && ( 
                  <div className="loading-section page-loader"><div className="spinner" /> <p>Processing...</p></div>
             )}
 
@@ -1509,7 +1502,7 @@ const App = () => {
         .error-message { color: var(--color-red-600); background-color: var(--color-red-100); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem; border: 1px solid var(--color-red-500); }
         .info-message { color: var(--text-secondary); text-align: center; padding: 1rem; font-style: italic;}
 
-        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.9); /* Slightly more opaque */ gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
+        .full-page-loader { display: flex; flex-direction:column; align-items: center; justify-content: center; min-height: 100vh; width:100%; background-color: rgba(243,244,246,0.9); gap:1rem; position: fixed; top:0; left:0; z-index:9999; }
         .spinner { width: 3.5rem; height: 3.5rem; border: 5px solid #e0e0e0; border-top-color: var(--color-blue-500); border-radius: 50%; animation: spin 0.8s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1764,7 +1757,7 @@ const App = () => {
         .challenge-option-btn.selected:not(.correct):not(.incorrect) { border-color: var(--color-purple-500); background: var(--color-purple-100); font-weight:500;}
         .challenge-option-btn.correct { background-color: var(--color-green-100); border-color: var(--color-green-500); color: var(--color-green-600); font-weight: bold; }
         .challenge-option-btn.incorrect { background-color: var(--color-red-100); border-color: var(--color-red-500); color: var(--color-red-600); }
-        .challenge-option-btn .option-letter { background: #e9ecef; } /* Neutral background for option letters */
+        .challenge-option-btn .option-letter { background: #e9ecef; } 
         .challenge-option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-purple-500); color: white; }
         .challenge-option-btn.correct .option-letter { background: var(--color-green-500); color: white; }
         .challenge-option-btn.incorrect .option-letter { background: var(--color-red-500); color: white; }
@@ -1784,7 +1777,6 @@ const App = () => {
         .back-dashboard-btn { background-color:#6c757d; color:white; border-color:#5a6268;}
         .back-dashboard-btn:hover { background-color:#5a6268;}
 
-        /* Challenge Configuration Styles */
         .challenge-config {
           margin: 1.5rem auto 2rem;
           max-width: 550px;
@@ -1819,14 +1811,14 @@ const App = () => {
         .config-item select:focus,
         .config-item input[type="number"]:focus {
             border-color: var(--color-purple-500);
-            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); /* Using purple for focus consistent with challenge theme */
+            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); 
             outline: none;
         }
         .category-checkboxes {
           display: flex;
           flex-wrap: wrap;
           gap: 0.8rem;
-          justify-content: flex-start; /* Align items to the start */
+          justify-content: flex-start; 
         }
         .category-checkbox-item {
           display: flex;
@@ -1846,17 +1838,15 @@ const App = () => {
         .category-checkbox-item input[type="checkbox"] {
           width: 1rem;
           height: 1rem;
-          accent-color: var(--color-purple-500); /* Match checkbox color to purple theme */
+          accent-color: var(--color-purple-500); 
           cursor: pointer;
         }
         .category-checkbox-item label {
             cursor: pointer;
-            font-weight: normal; /* Keep label text normal weight */
+            font-weight: normal; 
             color: var(--text-secondary);
         }
 
-
-        /* Responsive Adjustments */
         @media (max-width: 1024px) {
             .nav-items { gap: 0.5rem; }
             .nav-item { padding: 0.6rem 0.8rem; font-size:0.9rem;}
@@ -1902,7 +1892,7 @@ const App = () => {
             .current-team-card .team-card-main {flex-direction:column; align-items:center; text-align:center; gap:1rem;}
             .team-avatar-icon {margin-bottom:0.5rem;}
             .challenge-question-card h3 { font-size:1.2rem; }
-            .category-checkboxes { justify-content: center; } /* Center checkboxes on small screens if they wrap */
+            .category-checkboxes { justify-content: center; } 
         }
       `}</style>
     </>

@@ -1,4 +1,3 @@
-// src/Firebase.js
 import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
@@ -12,17 +11,17 @@ console.log("[Firebase.js] Script start. Attempting to initialize Firebase...");
 // Project Settings > General > Your apps > Web app > SDK setup and configuration > Config
 // =================================================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyDziIoedENZQ2xuKl2h66nzZmjdqmQkSU8", // <--- REPLACE THIS
-  authDomain: "vexcel-ad5a9.firebaseapp.com", // <--- REPLACE THIS (e.g., your-project-id.firebaseapp.com)
-  projectId: "vexcel-ad5a9", // <--- REPLACE THIS
-  storageBucket: "vexcel-ad5a9.firebasestorage.app", // <--- REPLACE THIS (e.g., your-project-id.appspot.com)
-  messagingSenderId: "664588170188", // <--- REPLACE THIS
-  appId: "1:664588170188:web:031267962d99b2015e6369" // <--- REPLACE THIS (e.g., 1:your-sender-id:web:your-app-code)
-  // measurementId: "YOUR_MEASUREMENT_ID" // This is optional
+  apiKey: "AIzaSyDziIoedENZQ2xuKl2h66nzZmjdqmQkSU8", 
+  authDomain: "vexcel-ad5a9.firebaseapp.com", 
+  projectId: "vexcel-ad5a9", 
+  storageBucket: "vexcel-ad5a9.firebasestorage.app", 
+  messagingSenderId: "664588170188", 
+  appId: "1:664588170188:web:031267962d99b2015e6369" 
+  // measurementId: "YOUR_MEASUREMENT_ID" 
 };
 
 console.log("[Firebase.js] USING firebaseConfig:", JSON.stringify(firebaseConfig, (key, value) => {
-  if (key === 'apiKey') return 'REDACTED_FOR_LOG'; // Avoid logging sensitive keys directly
+  if (key === 'apiKey') return 'REDACTED_FOR_LOG'; 
   return value;
 }, 2));
 
@@ -32,7 +31,6 @@ let authInstance = null;
 let dbInstance = null;
 
 try {
-  // Basic check to see if critical values still look like placeholders
   if (!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith("YOUR_") || firebaseConfig.apiKey.startsWith("AIzaSy") && firebaseConfig.apiKey.length < 20) {
     console.error("[Firebase.js] FATAL: apiKey in firebaseConfig looks like a placeholder or is incomplete!");
     throw new Error("Firebase apiKey is a placeholder or incomplete. Please replace it with your actual apiKey in Firebase.js.");
@@ -82,11 +80,9 @@ try {
     errorDiv.style.textAlign = 'center';
     errorDiv.innerHTML = `<b>Firebase Initialization Failed in Firebase.js:</b> ${error.message}. <br/>Check the developer console (F12) for details and meticulously verify your <strong>firebaseConfig values in src/Firebase.js</strong>. The app will not work correctly until this is fixed.`;
     
-    // Attempt to prepend to body, though React might overwrite. Console logs are key.
     if (document.body) {
         document.body.prepend(errorDiv);
     } else {
-        // Fallback if body isn't ready
         window.addEventListener('DOMContentLoaded', () => {
             if(document.body) document.body.prepend(errorDiv);
         });
