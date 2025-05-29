@@ -1,22 +1,706 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
-import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2 } from 'lucide-react';
+import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2, Layers, Crosshair, Truck, Wrench, University, SquarePen, Terminal, Bot, CircuitBoard, Radar, Trash2 } from 'lucide-react';
 
-import { auth, db } from './Firebase'; 
+import { auth, db } from './Firebase'; // Assuming Firebase.js is correctly configured
 import { GoogleAuthProvider as FirebaseGoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, updateDoc, writeBatch,
   collection, query, where, getDocs, addDoc, serverTimestamp,
-  increment, arrayUnion, arrayRemove, orderBy, limit
+  increment, arrayUnion, arrayRemove, orderBy, limit, deleteDoc
 } from 'firebase/firestore';
 
 console.log("[App.js] Value of 'auth' imported from ./Firebase.js:", auth);
 console.log("[App.js] Value of 'db' imported from ./Firebase.js:", db);
 
+// Helper function to generate unique IDs (slugify)
+const slugify = (text) => text.toString().toLowerCase().trim()
+  .replace(/\s+/g, '-')           // Replace spaces with -
+  .replace(/[^\w-]+/g, '')       // Remove all non-word chars
+  .replace(/--+/g, '-')         // Replace multiple - with single -
+  .replace(/^-+/, '')             // Trim - from start of text
+  .replace(/-+$/, '');            // Trim - from end of text
+
+// Helper function to generate placeholder contentDetail
+const generateContentDetail = (title, customText = "") => {
+  const placeholderText = customText || `Comprehensive guide on ${title}. Learn about its principles, applications in VEX robotics, and best practices. Detailed examples and diagrams will be provided.`;
+  return `<h1>${title}</h1><p>${placeholderText}</p><img src='https://placehold.co/600x350/EBF0F5/8FA4B8?text=${encodeURIComponent(title)}' alt='${title}' style='width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;'>`;
+};
+
+const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
+const XP_PER_LEVEL = 500;
+const CHALLENGE_MAX_XP = 100;
+const QUESTIONS_PER_CHALLENGE = 5;
+const QUESTION_TIMER_DURATION = 20;
+
+
+// --- Component Definitions ---
+
+const LoginView = ({
+  googleClientId,
+  actionLoading,
+  currentView,
+  message,
+  user,
+  onLoginSuccess,
+  onLoginError,
+}) => (
+  <GoogleOAuthProvider clientId={googleClientId}>
+    <div className="login-container">
+      <div className="login-card">
+        <div className="login-header">
+          <Target className="brand-icon-large" style={{color: '#667eea'}}/>
+          <h1>Vexcel</h1>
+          <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
+        </div>
+        {actionLoading && currentView === 'login' && (
+          <div className="loading-section login-specific-loader">
+            <div className="spinner"></div>
+            <p>Processing Sign-In...</p>
+          </div>
+        )}
+        {message && !user && currentView === 'login' && (
+          <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') || message.includes('logged out') ? 'info' : 'success')}`}>
+            {message}
+          </div>
+        )}
+        {!actionLoading && !user && (
+          <div className="login-section">
+            <GoogleLogin
+              onSuccess={onLoginSuccess}
+              onError={onLoginError}
+              useOneTap={true}
+              auto_select={false}
+              theme="outline"
+              size="large"
+              text="signin_with"
+              shape="rectangular"
+              width="300px"
+            />
+          </div>
+        )}
+        <div className="features-preview">
+          <div className="feature"><BookOpen className="feature-icon" /><span>Interactive Modules</span></div>
+          <div className="feature"><Users className="feature-icon" /><span>Team Collaboration</span></div>
+          <div className="feature"><Trophy className="feature-icon" /><span>Leaderboards</span></div>
+          <div className="feature"><Puzzle className="feature-icon" /><span>Knowledge Challenges</span></div>
+        </div>
+        <p className="login-footer">© {new Date().getFullYear()} Vexcel Platform. Empowering VEX enthusiasts.</p>
+      </div>
+    </div>
+  </GoogleOAuthProvider>
+);
+
+const Navigation = ({ user, currentView, navigate, handleLogout, actionLoading }) => (
+  <nav className="nav">
+    <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
+      <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
+      <span className="brand-text">Vexcel</span>
+    </div>
+    {user && (
+      <div className="nav-items">
+        <button className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}><Home className="icon" />Dashboard</button>
+        <button className={`nav-item ${currentView === 'teams' ? 'active' : ''}`} onClick={() => navigate('teams')}><Users className="icon" />My Team</button>
+        <button className={`nav-item ${currentView === 'browseTeams' ? 'active' : ''}`} onClick={() => navigate('browseTeams')}><Search className="icon" />Browse Teams</button>
+        <button className={`nav-item ${currentView === 'leaderboard' ? 'active' : ''}`} onClick={() => navigate('leaderboard')}><Trophy className="icon" />Leaderboard</button>
+        <button className={`nav-item ${currentView === 'challenge' ? 'active' : ''}`} onClick={() => navigate('challenge')}><Puzzle className="icon" />Challenge</button>
+        <div className="nav-user">
+          <img src={user.avatar} alt={user.name} className="user-avatar" onError={(e)=>e.target.src='https://source.boringavatars.com/beam/120/default?colors=264653,2a9d8f,e9c46a,f4a261,e76f51'}/>
+          <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">Lvl {user.level} ({user.xp || 0} XP)</span></div>
+          <button onClick={handleLogout} className="logout-btn" title="Logout" disabled={actionLoading}><LogOut size={18}/></button>
+        </div>
+      </div>
+    )}
+  </nav>
+);
+
+const Dashboard = ({ user, userProgress, userTeam, learningModules, navigate, actionLoading }) => {
+  if (!user) return null;
+  const modulesInProgress = learningModules.filter(m => {
+      const prog = userProgress[m.id];
+      return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
+  });
+  const recommendedNextModule = modulesInProgress.length > 0 ? modulesInProgress[0] : learningModules.find(m => !userProgress[m.id] || Object.keys(userProgress[m.id].lessons).length === 0);
+  
+  const allCategories = [...new Set(learningModules.map(m => m.category || 'General'))];
+  const preferredCategoryOrder = ['Hardware', 'Software', 'CAD', 'Electronics', 'Sensors', 'Team Management', 'Competition', 'AI', 'General'];
+  const categoryOrder = [...new Set([...preferredCategoryOrder, ...allCategories])];
+
+  const categorizedModules = learningModules.reduce((acc, module) => {
+      const category = module.category || 'General';
+      if (!acc[category]) acc[category] = [];
+      acc[category].push(module);
+      return acc;
+  }, {});
+
+  return (
+  <div className="dashboard">
+    <div className="dashboard-header">
+      <div className="welcome-section">
+        <h1>Welcome back, {user.name}!</h1>
+        <p>Ready to tackle new VEX challenges today?</p>
+      </div>
+      <div className="stats-grid">
+        <div className="stat-card"><Award className="stat-icon" /><div><span className="stat-value">{user.xp || 0}</span><span className="stat-label">Total XP</span></div></div>
+        <div className="stat-card"><Target className="stat-icon" /><div><span className="stat-value">{user.level}</span><span className="stat-label">Level</span></div></div>
+        <div className="stat-card"><Zap className="stat-icon" /><div><span className="stat-value">{user.streak}</span><span className="stat-label">Day Streak</span></div></div>
+      </div>
+    </div>
+    {userTeam && (
+      <div className="team-card">
+        <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{(userTeam.memberIds ? userTeam.memberIds.length : 0)} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
+        <div className="team-stats"><span className="team-xp">{(userTeam.totalXP || 0).toLocaleString()} XP</span></div>
+      </div>
+    )}
+    {recommendedNextModule && (
+        <div className="recommended-module-card" onClick={() => navigate('module', recommendedNextModule)}>
+            <div className="recommended-tag">Recommended Next</div>
+            <recommendedNextModule.icon className="module-icon" style={{color: `var(--color-${recommendedNextModule.color}-500)`}}/>
+            <h3>{recommendedNextModule.title}</h3>
+            <p>{recommendedNextModule.description.substring(0,100)}...</p>
+            <button className="start-btn small" disabled={actionLoading}>
+                {userProgress[recommendedNextModule.id] && Object.keys(userProgress[recommendedNextModule.id].lessons).length > 0 ? 'Continue Module' : 'Start Module'} <ChevronRight className="icon-small"/>
+            </button>
+        </div>
+    )}
+    <div className="modules-section">
+      {categoryOrder.map(category => {
+          if (!categorizedModules[category] || categorizedModules[category].length === 0) return null;
+          return (
+              <div key={category} className="module-category-section">
+                  <h2 className="category-title">{category} Modules</h2>
+                  <div className="modules-grid">
+                  {categorizedModules[category].map((module) => {
+                      const Icon = module.icon;
+                      const prog = userProgress[module.id] || { lessons: {}, moduleXp: 0 };
+                      const completedCount = Object.values(prog.lessons).filter(l => l.completed).length;
+                      const progressPercent = module.lessons > 0 ? (completedCount / module.lessons) * 100 : 0;
+                      return (
+                      <div key={module.id} className={`module-card ${module.color}`} onClick={() => navigate('module', module)}>
+                          <div className="module-header"> <Icon className="module-icon" /> <div className="module-meta"> <span className="difficulty">{module.difficulty}</span> <span className="duration">{module.duration}</span> </div> </div>
+                          <h3>{module.title}</h3> <p>{module.description}</p>
+                          <div className="progress-section">
+                          <div className="progress-bar"><div className="progress-fill" style={{ width: `${progressPercent}%` }}></div></div>
+                          <span className="progress-text">{completedCount}/{module.lessons} items ({(prog.moduleXp || 0)} XP)</span>
+                          </div>
+                          <button className="start-btn" disabled={actionLoading}> {progressPercent === 100 ? 'Review Module' : progressPercent > 0 ? 'Continue Learning' : 'Start Learning'} <ChevronRight className="icon" /> </button>
+                      </div>
+                      );
+                  })}
+                  </div>
+              </div>
+          );
+      })}
+      </div>
+  </div>
+)};
+
+const ModuleView = ({ selectedModule, userProgress, navigate, actionLoading }) => {
+  if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
+  const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
+  const Icon = selectedModule.icon;
+  return (
+    <div className="module-view">
+      <div className="module-view-header">
+        <button onClick={() => navigate('dashboard')} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to Dashboard</button>
+        <div className="module-title-section">
+          <Icon className="module-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}} />
+          <div>
+            <span className="category-tag-module">{selectedModule.category || 'General'}</span>
+            <h1>{selectedModule.title}</h1> <p>{selectedModule.description}</p>
+            <div className="module-badges"> <span className="badge">{selectedModule.difficulty}</span> <span className="badge">{selectedModule.duration}</span> <span className="badge">{selectedModule.lessons} items</span> </div>
+          </div>
+        </div>
+      </div>
+      <div className="lessons-list">
+        {selectedModule.content.lessons.map((lesson, index) => {
+          const lessonState = moduleProg.lessons[lesson.id.replace(/\./g, '_')] || { completed: false };
+          const isCompleted = lessonState.completed;
+          const prevLessonSanitizedId = index > 0 ? selectedModule.content.lessons[index - 1].id.replace(/\./g, '_') : null;
+          const isLocked = index > 0 && !(moduleProg.lessons[prevLessonSanitizedId]?.completed);
+          const LessonIcon = lesson.type === 'quiz' ? Puzzle : lesson.type === 'game' ? Play : MessageSquare;
+          return (
+            <div key={lesson.id} className={`lesson-item ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
+              onClick={() => {
+                if (actionLoading || (isLocked && !isCompleted)) return;
+                if (lesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson });
+                else if (lesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson });
+                else if (lesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson });
+              }}>
+              <div className="lesson-number">{isCompleted ? <Check className="icon-small" /> : index + 1}</div>
+              <LessonIcon className="lesson-type-icon" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
+              <div className="lesson-content"> <h3>{lesson.title}</h3> <span className="lesson-type-badge">{lesson.type} (+{lesson.xp} XP)</span> </div>
+              <button className="lesson-btn" disabled={actionLoading || (isLocked && !isCompleted)}> {isCompleted ? 'Review' : (isLocked ? 'Locked' : 'Start')} <ChevronRight className="icon-small" /> </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+const LessonContentView = ({ currentLesson, selectedModule, userProgress, handleCompleteItem, navigate, actionLoading }) => {
+  if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
+  const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
+  const lessonState = moduleProg.lessons[currentLesson.id.replace(/\./g, '_')] || { completed: false };
+  const isCompleted = lessonState.completed;
+
+  const handleMarkCompleteAndContinue = () => {
+    if (actionLoading) return;
+    const sanitizedLessonId = currentLesson.id.replace(/\./g, '_');
+    if (!isCompleted) handleCompleteItem(selectedModule.id, sanitizedLessonId, currentLesson.type, null, currentLesson.xp);
+    
+    const currentIndex = selectedModule.content.lessons.findIndex(l => l.id === currentLesson.id);
+    const nextLesson = selectedModule.content.lessons[currentIndex + 1];
+    if (nextLesson) {
+      const nextLessonProg = moduleProg.lessons[nextLesson.id.replace(/\./g, '_')] || { completed: false };
+      // const currentNowCompleted = true; 
+      // const isNextLocked = !(currentNowCompleted || nextLessonProg.completed) && currentIndex + 1 > 0 && selectedModule.content.lessons[currentIndex].type !== 'quiz' && selectedModule.content.lessons[currentIndex].type !== 'game';
+
+      // if (isNextLocked && !(moduleProg.lessons[selectedModule.content.lessons[currentIndex].id.replace(/\./g, '_')]?.completed)) {
+      //        navigate('module', { id: selectedModule.id }); return;
+      // }
+
+      if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
+      else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
+      else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
+      else navigate('module', { id: selectedModule.id });
+    } else navigate('module', { id: selectedModule.id });
+  };
+
+  return (
+    <div className="lesson-content-view">
+      <button onClick={() => navigate('module', {id: selectedModule.id})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to {selectedModule.title}</button>
+      <div className="lesson-title-header">
+          <MessageSquare className="lesson-type-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
+          <h2>{currentLesson.title}</h2>
+      </div>
+      <div className="content-area" dangerouslySetInnerHTML={{ __html: currentLesson.contentDetail || "<p>No detailed content available for this lesson.</p>" }} />
+      <button onClick={handleMarkCompleteAndContinue} className="complete-lesson-btn" disabled={actionLoading}>
+        {isCompleted ? 'Continue to Next Item' : `Mark as Complete & Continue (+${currentLesson.xp} XP)`}
+        <ChevronRight className="icon-small"/>
+      </button>
+    </div>
+  );
+};
+
+const QuizView = ({ quizData, sampleQuizzes, userProgress, selectedModule, handleCompleteItem, navigate, actionLoading, setMessage }) => {
+  const [currentQIdx, setCurrentQIdx] = useState(0);
+  const [selectedAns, setSelectedAns] = useState(null);
+  const [showRes, setShowRes] = useState(false);
+  const [quizScore, setQuizScore] = useState(0);
+  const [showExplanation, setShowExplanation] = useState(false);
+
+  if (!quizData || !quizData.lessonId) return <p className="error-message">Loading quiz...</p>;
+  const sanitizedLessonId = quizData.lessonId.replace(/\./g, '_');
+  const quizContent = sampleQuizzes[sanitizedLessonId];
+  if (!quizContent) return <p className="error-message">Quiz content not found for: {quizData.lessonId}. Please check `sampleQuizzes` and ensure keys match sanitized lesson IDs.</p>;
+
+  const handleAnsSelect = (idx) => { if (showExplanation || actionLoading) return; setSelectedAns(idx); }
+  const handleSubmitAnswer = () => {
+    if (selectedAns === null || actionLoading) return;
+    setShowExplanation(true);
+    const q = quizContent.questions[currentQIdx];
+    if (selectedAns === q.correct) { setQuizScore(s => s + 1); }
+  };
+  const handleNextQ = () => {
+    if (actionLoading) return;
+    setShowExplanation(false); setSelectedAns(null);
+    if (currentQIdx + 1 < quizContent.questions.length) {
+      setCurrentQIdx(i => i + 1);
+    } else {
+      setShowRes(true);
+      const finalScore = quizScore;
+      const passPercent = 70;
+      const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
+      if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
+        handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalScore, quizData.lesson.xp);
+      } else if (currentModuleProgress.completed) {
+          setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
+      }
+      else { 
+          setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
+      }
+    }
+  };
+  const resetQuiz = () => { setCurrentQIdx(0); setSelectedAns(null); setShowRes(false); setQuizScore(0); setShowExplanation(false); };
+
+  if (showRes) {
+    const perc = Math.round((quizScore / quizContent.questions.length) * 100);
+    const passed = perc >= 70;
+    const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
+    return (
+      <div className="quiz-result">
+        <div className={`result-icon ${passed ? 'success' : 'fail'}`}>{passed ? <Check /> : <X />}</div>
+        <h2>{passed ? 'Excellent Work!' : 'Keep Practicing!'}</h2>
+        <p>Your score: {quizScore}/{quizContent.questions.length} ({perc}%)</p>
+        {passed && !currentModuleProgress.completed && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
+        {passed && currentModuleProgress.completed && <p className="xp-earned">XP previously earned for this quiz.</p>}
+        {!passed && <p>You need 70% to pass and earn XP for this quiz.</p>}
+        <div className="result-actions">
+          <button onClick={resetQuiz} className="retry-btn" disabled={actionLoading}><RotateCcw className="icon-small"/> Try Again</button>
+          <button onClick={() => navigate('module', {id: quizData.moduleId})} className="continue-btn" disabled={actionLoading}>Back to Module <ChevronRight className="icon-small"/></button>
+        </div>
+      </div>
+    );
+  }
+  const q = quizContent.questions[currentQIdx];
+  return (
+    <div className="quiz-view">
+      <button onClick={() => navigate('module', {id: quizData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
+      <div className="quiz-header-info">
+          <Puzzle className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
+          <h2>{quizContent.title}</h2>
+          <div className="quiz-progress"><span>Question {currentQIdx + 1}/{quizContent.questions.length}</span><div className="progress-bar"><div style={{width: `${((currentQIdx+1)/quizContent.questions.length)*100}%`}}/></div></div>
+      </div>
+      <div className="question-card">
+        <h3>{q.question}</h3>
+        <div className="options-list">
+          {q.options.map((opt, i) =>
+              <button
+                  key={i}
+                  className={`option-btn ${selectedAns === i ? 'selected' : ''} ${showExplanation && q.correct === i ? 'correct' : ''} ${showExplanation && selectedAns === i && q.correct !== i ? 'incorrect' : ''}`}
+                  onClick={() => handleAnsSelect(i)}
+                  disabled={showExplanation || actionLoading}>
+                  <span className="option-letter">{String.fromCharCode(65+i)}</span>{opt}
+              </button>
+          )}
+        </div>
+        {showExplanation && q.explanation && (
+          <div className="explanation-box">
+            <strong>Explanation:</strong> {q.explanation}
+          </div>
+        )}
+        {!showExplanation && <button className="submit-btn" disabled={selectedAns === null || actionLoading} onClick={handleSubmitAnswer}>Submit Answer</button>}
+        {showExplanation && <button className="submit-btn" onClick={handleNextQ} disabled={actionLoading}>{currentQIdx + 1 === quizContent.questions.length ? 'Finish Quiz' : 'Next Question'}</button>}
+      </div>
+    </div>
+  );
+};
+
+const GameView = ({ gameData, sampleGames, userProgress, selectedModule, handleCompleteItem, navigate, actionLoading, setMessage }) => {
+  if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
+  const sanitizedLessonId = gameData.lessonId.replace(/\./g, '_');
+  const gameContent = sampleGames[sanitizedLessonId];
+  if (!gameContent) return <p className="error-message">Game content not found for: {gameData.lessonId}. Please check `sampleGames` and ensure keys match sanitized lesson IDs.</p>;
+
+  const handleCompleteGame = () => {
+    if (actionLoading) return;
+    const isAlreadyCompleted = userProgress[gameData.moduleId]?.lessons[sanitizedLessonId]?.completed;
+    if (!isAlreadyCompleted) {
+      handleCompleteItem(gameData.moduleId, sanitizedLessonId, 'game', null, gameContent.xp || 30);
+      setMessage(`Challenge "${gameContent.title}" completed! +${gameContent.xp || 30} XP`);
+    } else {
+      setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
+    }
+    navigate('module', {id: gameData.moduleId});
+  };
+
+  return (
+    <div className="game-view">
+      <button onClick={() => navigate('module', {id: gameData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
+      <div className="game-header-info">
+          <Play className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
+          <h2>{gameContent.title}</h2>
+      </div>
+      <div className="game-container">
+        <p className="game-instructions">{gameContent.instructions}</p>
+        <div className="game-placeholder">Simulated Game Area / Conceptual Challenge</div>
+        <button onClick={handleCompleteGame} className="complete-game-btn" disabled={actionLoading}>Complete Challenge</button>
+      </div>
+    </div>
+  );
+};
+
+const TeamsView = ({
+  user,
+  userTeam,
+  actionLoading,
+  joinTeamCodeInput,
+  setJoinTeamCodeInput,
+  createTeamNameInput,
+  setCreateTeamNameInput,
+  onJoinTeam,
+  onCreateTeam,
+  onLeaveTeam,
+  onDeleteTeam
+}) => {
+  return (
+    <div className="teams-view">
+      <div className="view-header"> <Users className="header-icon" /> <h1>My Team</h1> <p>Manage your team or join/create a new one.</p> </div>
+      {userTeam ? (
+        <div className="current-team-card">
+          <div className="team-card-main">
+            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/>
+            <div>
+                <h2>{userTeam.name}</h2>
+                <p className="team-description-small">{userTeam.description}</p>
+                <p><strong>Team Code:</strong> <code className="team-code-display">{userTeam.code}</code> (Share this!)</p>
+                <p>{(userTeam.memberIds ? userTeam.memberIds.length : 0)} members • Rank #{userTeam.rank || 'N/A'} • {(userTeam.totalXP || 0).toLocaleString()} Total XP</p>
+            </div>
+          </div>
+          <div className="team-management-actions">
+            <button className="leave-team-btn" onClick={onLeaveTeam} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Leave Team'}</button>
+            {user && userTeam.creatorId === user.id && (
+                <button className="delete-team-btn" onClick={onDeleteTeam} disabled={actionLoading}>
+                    <Trash2 size={16} /> {actionLoading ? 'Deleting...' : 'Delete Team'}
+                </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="no-team-actions">
+          <div className="team-action-card">
+            <h3>Join an Existing Team</h3> <p>Enter the code shared by a team leader.</p>
+            <div className="input-group">
+              <input type="text" placeholder="Enter team code" value={joinTeamCodeInput} onChange={(e) => setJoinTeamCodeInput(e.target.value.toUpperCase())} disabled={actionLoading} />
+              <button onClick={() => onJoinTeam()} disabled={actionLoading || !joinTeamCodeInput}>{actionLoading ? 'Processing...' : 'Join Team'}</button>
+            </div>
+          </div>
+          <div className="divider-or">OR</div>
+          <div className="team-action-card">
+            <h3>Create a New Team</h3> <p>Start your own Vexcel squad!</p>
+            <div className="input-group">
+              <input type="text" placeholder="Enter new team name" value={createTeamNameInput} onChange={(e) => setCreateTeamNameInput(e.target.value)} disabled={actionLoading} />
+              <button onClick={onCreateTeam} disabled={actionLoading || !createTeamNameInput}>{actionLoading ? 'Processing...' : 'Create Team'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const BrowseTeamsView = ({ allTeams, actionLoading, user, currentView, fetchAllTeams, userTeam, onJoinTeam }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const filteredAndSortedTeams = useMemo(() =>
+      allTeams
+          .filter(team =>
+              team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
+              team.code.toLowerCase().includes(searchTerm.toLowerCase())
+          )
+          .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0) || a.name.localeCompare(b.name)),
+      [allTeams, searchTerm]
+  );
+
+  useEffect(() => {
+      if (user && (currentView === 'browseTeams' && allTeams.length === 0 && !actionLoading)) {
+          fetchAllTeams();
+      }
+  }, [currentView, allTeams.length, fetchAllTeams, user, actionLoading]);
+
+  return (
+    <div className="browse-teams-view">
+      <div className="view-header"> <Eye className="header-icon" /> <h1>Browse All Teams</h1> <p>Find a team, see who's competing, or get inspired!</p> </div>
+      <div className="search-bar-container"> <Search className="search-icon" /> <input type="text" placeholder="Search by name, description, or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="teams-search-input" /> </div>
+      {actionLoading && allTeams.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
+      {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? (
+        <p className="info-message">No teams exist yet. Go to "My Team" to create one!</p>
+      ) : filteredAndSortedTeams.length > 0 ? (
+        <div className="teams-grid">
+          {filteredAndSortedTeams.map(team => (
+            <div key={team.id} className="team-browse-card">
+              <div className="team-card-header"><h3>{team.name}</h3><span className="team-code-badge">CODE: {team.code}</span></div>
+              <p className="team-description">{team.description || "No description available."}</p>
+              <div className="team-card-footer">
+                <span><Users size={16} /> {(team.memberIds ? team.memberIds.length : 0)} Members</span> <span><Trophy size={16} /> {(team.totalXP || 0).toLocaleString()} XP</span>
+                {(!userTeam || userTeam.id !== team.id) && <button onClick={() => onJoinTeam(team.code)} className="join-team-browse-btn" disabled={actionLoading || !!userTeam}>{!!userTeam ? 'In a Team' : (actionLoading ? 'Processing...' : 'Join Team')}</button>}
+                {userTeam && userTeam.id === team.id && <span className="current-team-indicator"><Check size={16}/> Your Team</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        !actionLoading && <p className="info-message">No teams match your search criteria.</p>
+      )}
+    </div>
+  );
+};
+
+const LeaderboardView = ({ allTeams, actionLoading, user, currentView, fetchAllTeams, userTeam }) => {
+  const sortedLeaderboard = useMemo(() =>
+      [...allTeams].sort((a, b) => (b.totalXP || 0) - (a.totalXP || 0)).map((team, index) => ({ ...team, rank: index + 1 })),
+      [allTeams]
+  );
+
+  useEffect(() => {
+      if (user && (currentView === 'leaderboard' && allTeams.length === 0 && !actionLoading)) {
+          fetchAllTeams();
+      }
+  }, [currentView, allTeams.length, fetchAllTeams, user, actionLoading]);
+
+  return (
+    <div className="leaderboard-view">
+      <div className="view-header"> <Trophy className="header-icon" /> <h1>Global Team Leaderboard</h1> <p>See how teams stack up in the Vexcel universe!</p> </div>
+      {actionLoading && sortedLeaderboard.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading leaderboard...</p></div>}
+      <div className="leaderboard-list">
+        {!actionLoading && sortedLeaderboard.length > 0 ? sortedLeaderboard.map((team) => (
+          <div key={team.id} className={`leaderboard-item ${userTeam && team.id === userTeam.id ? 'current-team' : ''}`}>
+            <span className="rank-badge">#{team.rank}</span>
+            <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : 0)} members • Code: {team.code}</p></div>
+            <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
+          </div>
+        )) : !actionLoading && <p className="info-message">The leaderboard is currently empty or no teams were found. Create or join a team to get started!</p>}
+      </div>
+    </div>
+  );
+};
+
+const VexpertChallengeView = ({
+    user, actionLoading, challengeState, vexpertChallengeBank,
+    selectedChallengeCategories, setSelectedChallengeCategories, availableChallengeCategories,
+    numChallengeQuestionsInput, setNumChallengeQuestionsInput, onStartChallenge,
+    challengeQuestions, currentChallengeQuestionIdx, challengeTimer, showChallengeAnswer, challengeScore,
+    onChallengeAnswer, onNextChallengeQuestion, onResetChallenge, questionTimerDuration, navigate
+}) => {
+    if (actionLoading && challengeState === 'idle') {
+        return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
+    }
+
+    if (challengeState === 'idle') {
+      return (
+        <div className="challenge-view">
+          <div className="view-header">
+            <Puzzle className="header-icon" style={{color: 'var(--color-green-500)'}} />
+            <h1>Knowledge Challenge</h1>
+            <p>Test your VEX robotics knowledge! Answer a series of questions and earn XP.</p>
+          </div>
+          <div className="challenge-idle-content">
+            <h2>Ready to Test Your Expertise?</h2>
+            <div className="challenge-config">
+              <div className="config-item">
+                <label htmlFor="numQuestionsConfig">Number of Questions:</label>
+                <select
+                  id="numQuestionsConfig"
+                  value={numChallengeQuestionsInput}
+                  onChange={(e) => setNumChallengeQuestionsInput(Number(e.target.value))}
+                  disabled={actionLoading}
+                >
+                  {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
+                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) 
+                    .sort((a,b) => a-b)
+                    .map(num => (
+                      <option key={num} value={num}>
+                        {num === vexpertChallengeBank.length ? `All (${vexpertChallengeBank.length})` : num}
+                      </option>
+                  ))}
+                </select>
+              </div>
+              <div className="config-item">
+                <label>Categories (select at least one):</label>
+                <div className="category-checkboxes">
+                  {availableChallengeCategories.map(category => (
+                    <div key={category} className="category-checkbox-item">
+                      <input
+                        type="checkbox"
+                        id={`cat-config-${category}`}
+                        value={category}
+                        checked={selectedChallengeCategories.includes(category)}
+                        onChange={(e) => {
+                          const cat = e.target.value;
+                          setSelectedChallengeCategories(prev =>
+                            e.target.checked ? [...prev, cat] : prev.filter(c => c !== cat)
+                          );
+                        }}
+                        disabled={actionLoading}
+                      />
+                      <label htmlFor={`cat-config-${category}`}>{category}</label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <p>You'll face {numChallengeQuestionsInput} questions from selected categories. Each question is timed. Aim for accuracy and speed!</p>
+            <button
+              className="challenge-action-btn start-challenge-btn"
+              onClick={onStartChallenge}
+              disabled={actionLoading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0}
+            >
+              {actionLoading ? 'Loading...' : `Start ${numChallengeQuestionsInput}-Question Challenge`}
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    if (challengeState === 'active' && challengeQuestions.length > 0) {
+      const currentQuestion = challengeQuestions[currentChallengeQuestionIdx];
+      return (
+        <div className="challenge-view active-challenge">
+          <div className="challenge-header">
+            <h2>Question {currentChallengeQuestionIdx + 1} / {challengeQuestions.length}</h2>
+            <div className="challenge-timer">
+                <Clock size={18} /> Time Left: <span className={challengeTimer <=5 ? 'timer-critical': ''}>{challengeTimer}s</span>
+            </div>
+            <div className="challenge-score">Score: {challengeScore}</div>
+          </div>
+          <div className="challenge-question-card">
+            <p className="question-category-tag">{currentQuestion.category} - {currentQuestion.difficulty}</p>
+            <h3>{currentQuestion.question}</h3>
+            <div className="challenge-options-list">
+              {currentQuestion.options.map((option, index) => (
+                <button
+                  key={index}
+                  className={`challenge-option-btn
+                    ${currentQuestion.selectedAnswer === index ? 'selected' : ''} // Assume selectedAnswer is part of question object in state for this view
+                    ${showChallengeAnswer && currentQuestion.correctAnswerIndex === index ? 'correct' : ''}
+                    ${showChallengeAnswer && currentQuestion.selectedAnswer === index && currentQuestion.correctAnswerIndex !== index ? 'incorrect' : ''}
+                  `}
+                  onClick={() => onChallengeAnswer(index)}
+                  disabled={showChallengeAnswer || actionLoading}
+                >
+                  <span className="option-letter">{String.fromCharCode(65 + index)}</span>
+                  {option}
+                </button>
+              ))}
+            </div>
+            {showChallengeAnswer && (
+              <div className="challenge-feedback">
+                {currentQuestion.selectedAnswer === currentQuestion.correctAnswerIndex ? // Use selectedAnswer from question for feedback
+                  <p className="feedback-correct"><Check size={20}/> Correct!</p> :
+                  <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)}.</p>
+                }
+                {currentQuestion.explanation && <p className="explanation-text"><em>Explanation:</em> {currentQuestion.explanation}</p>}
+                <button className="challenge-action-btn next-question-btn" onClick={onNextChallengeQuestion} disabled={actionLoading}>
+                  {currentChallengeQuestionIdx < challengeQuestions.length - 1 ? 'Next Question' : 'Finish Challenge'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    if (challengeState === 'results') {
+      const percentage = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * 100) : 0;
+      const xpAwarded = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
+      return (
+        <div className="challenge-view challenge-results">
+          <div className="view-header">
+            <BarChart2 className="header-icon" style={{color: 'var(--color-green-500)'}} />
+            <h1>Challenge Results</h1>
+          </div>
+          <div className="results-summary">
+            <p>You answered {challengeScore} out of {challengeQuestions.length} questions correctly ({percentage}%).</p>
+            <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>
+          </div>
+          <div className="challenge-ended-options">
+            <button className="challenge-action-btn play-again-btn" onClick={onResetChallenge} disabled={actionLoading}>Configure New Challenge</button>
+            <button className="challenge-action-btn back-dashboard-btn" onClick={() => navigate('dashboard')} disabled={actionLoading}>Back to Dashboard</button>
+          </div>
+        </div>
+      );
+    }
+    return <div className="challenge-view"><p>Loading challenge state...</p></div>;
+  };
+
+
+// --- Main App Component ---
 const App = () => {
-  const [user, setUser] = useState(null); 
-  const [loading, setLoading] = useState(true); 
-  const [actionLoading, setActionLoading] = useState(false); 
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [currentView, setCurrentView] = useState('login');
   const [selectedModule, setSelectedModule] = useState(null);
@@ -34,116 +718,341 @@ const App = () => {
   const [challengeQuestions, setChallengeQuestions] = useState([]);
   const [currentChallengeQuestionIdx, setCurrentChallengeQuestionIdx] = useState(0);
   const [challengeScore, setChallengeScore] = useState(0);
-  const [challengeSelectedAnswer, setChallengeSelectedAnswer] = useState(null);
+  const [challengeSelectedAnswer, setChallengeSelectedAnswer] = useState(null); // This is for App state
   const [showChallengeAnswer, setShowChallengeAnswer] = useState(false);
-  const [challengeTimer, setChallengeTimer] = useState(20);
+  const [challengeTimer, setChallengeTimer] = useState(QUESTION_TIMER_DURATION);
 
-  const CHALLENGE_MAX_XP = 100;
-  const QUESTIONS_PER_CHALLENGE = 5;
-  const QUESTION_TIMER_DURATION = 20;
 
   const [numChallengeQuestionsInput, setNumChallengeQuestionsInput] = useState(QUESTIONS_PER_CHALLENGE);
   const [availableChallengeCategories, setAvailableChallengeCategories] = useState([]);
   const [selectedChallengeCategories, setSelectedChallengeCategories] = useState([]);
 
-  const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
-  const XP_PER_LEVEL = 500;
 
   const learningModules = useMemo(() => [
-    {
-      id: 'intro-vex',
-      category: 'Hardware',
-      title: 'Introduction to VEX V5',
-      description: 'Master the fundamentals of the VEX V5 robotics system, from brain to sensors.',
-      duration: 'Approx. 30 min',
-      lessons: 3,
-      difficulty: 'Beginner',
-      color: 'blue',
-      icon: Brain,
-      content: {
-        lessons: [
-          { id: 'vex-brain-overview', title: 'VEX V5 Brain Deep Dive', type: 'lesson', xp: 20,
-            contentDetail: "<h1>Understanding the VEX V5 Brain</h1><p>The VEX V5 Brain is the central processing unit (CPU) of your robot. It's more than just a controller; it's the robot's mind. It houses the main processor, memory, and a versatile array of ports for connecting motors, sensors, and the V5 Controller.</p><img src=\"https://placehold.co/600x350/EBF4FF/7F9CF5?text=VEX+V5+Brain+Diagram\" alt=\"VEX V5 Brain Diagram\" style=\"width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;\"><h3>Key Features:</h3><ul><li><strong>Touchscreen LCD:</strong> A vibrant, responsive interface for program selection, live diagnostics, and direct feedback without needing a computer.</li><li><strong>Smart Ports (21):</strong> These auto-detect connected V5 Smart Devices (motors, sensors), simplifying wiring and programming.</li><li><strong>Wireless Communication:</strong> Supports VEXnet 3.0 for competition and controller linking, and Bluetooth for wireless programming and data transfer.</li><li><strong>Processor:</strong> Dual Core ARM Cortex A9 processor ensures rapid computation for complex tasks.</li><li><strong>MicroSD Card Slot:</strong> Allows for expanded program storage, data logging for performance analysis, and firmware updates.</li></ul><p>Proper handling, understanding its capabilities, and knowing how to troubleshoot the Brain are foundational skills for any VEX robotics participant. Keep it updated with the latest firmware for optimal performance and features!</p>" },
-          { id: 'motors-sensors', title: 'V5 Motors & Essential Sensors', type: 'lesson', xp: 25,
-            contentDetail: "<h1>VEX V5 Motors and Sensors</h1><p>Motors provide the brawn for movement, while sensors give your robot the crucial awareness of its environment, enabling autonomous behavior and precise control.</p><img src=\"https://placehold.co/600x350/E6FFFA/38B2AC?text=V5+Smart+Motor+%26+Sensors\" alt=\"VEX V5 Smart Motor and Sensors\" style=\"width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;\"><h3>V5 Smart Motor:</h3><ul><li><strong>Integrated Encoder:</strong> Provides precise feedback on position, velocity, and torque, enabling closed-loop control.</li><li><strong>Internal PID Control:</strong> Allows for accurate and stable movement without complex user programming for basic tasks.</li><li><strong>Monitoring:</strong> Tracks temperature, current, and voltage to prevent damage and provide diagnostic data.</li><li><strong>Gear Cartridges:</strong> Easily swappable gear ratios (Red for 100 RPM/High Torque, Green for 200 RPM/Standard, Blue for 600 RPM/High Speed) to tailor performance.</li></ul><h3>Common VEX V5 Sensors:</h3><ul><li><strong>Distance Sensor:</strong> Uses ultrasonic sound waves or laser to measure distance to objects, crucial for navigation and object avoidance.</li><li><strong>Optical Sensor:</strong> Detects colors, ambient light levels, and proximity of objects. Useful for line following or detecting game elements.</li><li><strong>Inertial Sensor (IMU):</strong> Measures orientation (roll, pitch, yaw), acceleration, and gyroscopic data. Essential for robot balancing, accurate turns, and field navigation.</li><li><strong>Vision Sensor:</strong> A powerful sensor that can detect and track up to 7 different colored objects, enabling advanced autonomous tasks like aiming or identifying specific game pieces.</li><li><strong>Rotation Sensor:</strong> Measures the amount of rotation of an axle, useful for tracking wheel travel or arm position.</li></ul><p>Effectively integrating and programming these motors and sensors is what elevates a simple chassis to a competitive robot.</p>" },
-          { id: 'intro-knowledge-check', title: 'V5 Fundamentals Quiz', type: 'quiz', xp: 35 },
-        ]
-      }
-    },
-    {
-      id: 'building-basics',
-      category: 'Hardware',
-      title: 'VEX Building Fundamentals',
-      description: 'Learn structural design, mechanical principles, and robust robot construction techniques.',
-      duration: 'Approx. 60 min',
-      lessons: 4,
-      difficulty: 'Beginner',
-      color: 'green',
-      icon: Settings2,
-      content: {
-        lessons: [
-          { id: 'structural-integrity', title: 'Structural Integrity & Design', type: 'lesson', xp: 20, contentDetail: "<h1>Structural Integrity in Robotics</h1><p>A robot's performance is heavily reliant on its structural integrity. A well-built robot is robust, reliable, and can withstand the rigors of competition.</p><img src=\"https://placehold.co/600x350/F0FFF4/7CB342?text=Robot+Structure+Example\" alt=\"Robot Structure Example\" style=\"width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;\"><h3>Key Principles:</h3><ul><li><strong>Triangulation:</strong> Using triangular supports (e.g., C-channels forming triangles) significantly increases rigidity and prevents flexing.</li><li><strong>Boxed Structures:</strong> Creating closed box sections (e.g., using two C-channels face-to-face or back-to-back with standoffs) provides strength in multiple directions.</li><li><strong>Bearing Supports:</strong> All rotating shafts MUST be supported by bearings on at least two points, ideally on opposite sides of any load, to reduce friction and prevent shaft bending.</li><li><strong>Secure Connections:</strong> Use appropriate screws (Keps nuts, Nylock nuts) and ensure they are tightened correctly. Avoid over-tightening, which can strip threads.</li><li><strong>Weight Distribution:</strong> Consider the center of gravity. A lower, more central CoG generally leads to a more stable robot.</li></ul><p>Think about how forces will act on your robot during operation. Reinforce areas that will experience high stress, such as arm joints or drivetrain mounts.</p>" },
-          { id: 'gear-ratios', title: 'Gear Ratios & Mechanical Advantage', type: 'lesson', xp: 25, contentDetail: "<h1>Understanding Gear Ratios</h1><p>Gear ratios are fundamental to robotics, allowing you to trade speed for torque (rotational force) or vice-versa.</p><h3>Calculating Gear Ratios:</h3><p>Ratio = (Number of teeth on Driven Gear) / (Number of teeth on Driving Gear)</p><ul><li><strong>Torque Increase (Speed Decrease):</strong> Driving a larger gear with a smaller gear (e.g., 12-tooth driving a 60-tooth). Ratio = 60/12 = 5:1. Torque is multiplied by 5, speed is divided by 5.</li><li><strong>Speed Increase (Torque Decrease):</strong> Driving a smaller gear with a larger gear (e.g., 60-tooth driving a 12-tooth). Ratio = 12/60 = 1:5. Speed is multiplied by 5, torque is divided by 5.</li><li><strong>Idler Gears:</strong> Gears placed between the driving and driven gear change the direction of rotation but do NOT affect the overall gear ratio.</li></ul><h3>Compound Gear Ratios:</h3><p>When multiple gear stages are used, the total gear ratio is the product of individual stage ratios. Example: Stage 1 (5:1) driving Stage 2 (3:1) results in a total ratio of 15:1.</p><p>Choosing the right gear ratio is critical for mechanisms like lifts, intakes, and drivetrains to achieve desired performance.</p>" },
-          { id: 'building-quiz', title: 'Building Principles Quiz', type: 'quiz', xp: 35 },
-          { id: 'design-challenge-game', title: 'Mini Design Challenge', type: 'game', xp: 40 }
-        ]
-      }
-    },
-    {
-      id: 'intro-vexcode-python',
-      category: 'Software',
-      title: 'Python with VEX V5',
-      description: 'Learn the basics of programming your VEX V5 robot using Python.',
-      duration: 'Approx. 45 min',
-      lessons: 2,
-      difficulty: 'Beginner',
-      color: 'purple',
-      icon: Code,
-      content: {
-        lessons: [
-          { id: 'python-basics', title: 'Python Fundamentals for Robotics', type: 'lesson', xp: 25, contentDetail: "<h1>Python for VEX V5</h1><p>Content on Python syntax, VEX API, and basic motor/sensor control with Python.</p><img src='https://placehold.co/600x350/EDE9FE/8B5CF6?text=VEX+Python+Code' alt='VEX Python Code' style='width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;'>" },
-          { id: 'python-sensor-quiz', title: 'Python Sensor Quiz', type: 'quiz', xp: 30 },
-        ]
-      }
-    },
-    {
-      id: 'autonomous-programming',
-      category: 'Software',
-      title: 'Autonomous Programming Logic',
-      description: 'Understand how to use sensors and control structures for autonomous robot behavior.',
-      duration: 'Approx. 75 min',
-      lessons: 3,
-      difficulty: 'Intermediate',
-      color: 'orange',
-      icon: Zap,
-      content: {
-        lessons: [
-            { id: 'control-flow', title: 'Control Flow (Loops & Conditionals)', type: 'lesson', xp: 30, contentDetail: "<h1>Autonomous Control Flow</h1><p>Detailed explanation of if/else, while loops, for loops in context of robot actions.</p>" },
-            { id: 'sensor-integration', title: 'Integrating Sensor Feedback', type: 'lesson', xp: 35, contentDetail: "<h1>Using Sensors in Autonomous</h1><p>Examples of using distance, optical, inertial sensors to make decisions.</p>" },
-            { id: 'auton-challenge', title: 'Mini Autonomous Challenge', type: 'game', xp: 40 }
-        ]
-      }
-    },
-    {
-      id: 'intro-cad-vex',
-      category: 'CAD',
-      title: 'Introduction to CAD for VEX',
-      description: 'Explore the basics of Computer-Aided Design for planning and visualizing your VEX robot.',
-      duration: 'Approx. 60 min',
-      lessons: 2,
-      difficulty: 'Beginner',
-      color: 'red',
-      icon: Target,
-      content: {
-        lessons: [
-          { id: 'cad-basics', title: 'CAD Software Overview & Basic Sketching', type: 'lesson', xp: 30, contentDetail: "<h1>Why CAD?</h1><p>Introduction to common CAD software (Onshape, Fusion 360) and fundamental 2D sketching and 3D modeling concepts relevant to VEX parts.</p><img src='https://placehold.co/600x350/FEE2E2/EF4444?text=VEX+Robot+CAD+Model' alt='VEX Robot CAD Model' style='width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;'>" },
-          { id: 'cad-assembly-quiz', title: 'Basic Assembly Concepts Quiz', type: 'quiz', xp: 35 },
-        ]
-      }
-    },
-  ], []);
-
+ {
+  id: slugify('Design Fundamentals'),
+  category: 'Hardware',
+  title: 'Design Fundamentals',
+  description: 'Gear Ratios In-Depth, Understanding Internal Forces (Stress), Torque Applications, RPM and Speed Control, Center of Mass (CoM)',
+  duration: 'Approx. 75 min',
+  lessons: 5,
+  difficulty: 'Intermediate',
+  color: 'green',
+  icon: Settings2,
+  content: {
+   lessons: [
+    { id: slugify('Gear Ratios In-Depth'), title: 'Gear Ratios In-Depth', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Gear Ratios In-Depth', "Gear ratios are one of the most common design decisions that a team must master in order to optimize mechanical advantage in their designs.") },
+    { id: slugify('Understanding Internal Forces (Stress)'), title: 'Understanding Internal Forces (Stress)', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Understanding Internal Forces (Stress)', "In materials science, stress refers to the internal forces that exist within a material as a result of external loads or forces acting on it.") },
+    { id: slugify('Torque Applications'), title: 'Torque Applications', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Torque Applications', "Torque, also known as moment of force, is a measure of the rotational force applied to an object.") },
+    { id: slugify('RPM and Speed Control'), title: 'RPM and Speed Control', type: 'lesson', xp: 20, contentDetail: generateContentDetail('RPM and Speed Control', "RPM, or revolutions per minute, is a measure of the rotational speed of an object.") },
+    { id: slugify('Center of Mass (CoM)'), title: 'Center of Mass (CoM)', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Center of Mass (CoM)', "The center of mass significantly impacts the robot's maneuverability. Make sure to consider its effect on each subsystem during the design stage, rather than addressing it after the robot is built.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Structure'),
+  category: 'Hardware',
+  title: 'Structure',
+  description: 'C-Channels and Angles, Fasteners, Retainers, Gussets and Brackets, Bearings, Plates and Flat Bars',
+  duration: 'Approx. 30 min',
+  lessons: 6,
+  difficulty: 'Beginner',
+  color: 'blue',
+  icon: Puzzle,
+  content: {
+   lessons: [
+    { id: slugify('C-Channels and Angles'), title: 'C-Channels and Angles', type: 'lesson', xp: 20, contentDetail: generateContentDetail('C-Channels and Angles', "Important components for main structural foundations. The most commonly used type of metal in VEX, C-Channels provide a stable, secure grounding for a majority of subsystems that can be used.") },
+    { id: slugify('Fasteners'), title: 'Fasteners', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Fasteners', "Crucial for attaching structural pieces to each other. In the scope of the VEX Robotics Competition, the typical screw will be steel and will have an #8-32 thread size.") },
+    { id: slugify('Retainers'), title: 'Retainers', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Retainers', "Simplify robot construction with hex nut retainers and standoffs retainers. Retainers are nylon, hexagonally-shaped parts which have varying protrusions depending on the type of retainer used.") },
+    { id: slugify('Gussets and Brackets'), title: 'Gussets and Brackets', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Gussets and Brackets', "Smaller metal pieces used to mount structural components. There are many different varieties of Gusset available to use in the VEX Robotics Competition.") },
+    { id: slugify('Bearings'), title: 'Bearings', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Bearings', "Ensure smooth, frictionless motion in moving parts. The most frequently used type of bearing among competition teams, Bearing Flats are most often used on joints.") },
+    { id: slugify('Plates and Flat Bars'), title: 'Plates and Flat Bars', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Plates and Flat Bars', "Versatile structural components with a variety of uses. As barebones as it gets, Plate Metal is a 5x15 or 5x25 hole plate.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Motion Parts'),
+  category: 'Hardware',
+  title: 'Motion Parts',
+  description: 'High Strength Components, Gears and Sprockets, Flex Wheels, Mecanum Wheels, Omnidirectional Wheels, Traction Wheels',
+  duration: 'Approx. 90 min',
+  lessons: 6,
+  difficulty: 'Intermediate',
+  color: 'green',
+  icon: Layers,
+  content: {
+   lessons: [
+    { id: slugify('High Strength Components'), title: 'High Strength Components', type: 'lesson', xp: 20, contentDetail: generateContentDetail('High Strength Components', "This section covers the difference between various High Strength and Low Strength components in VEX.") },
+    { id: slugify('Gears and Sprockets'), title: 'Gears and Sprockets', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Gears and Sprockets', "Gears and sprockets are both used to transfer motion from a powered to an unpowered object.") },
+    { id: slugify('Flex Wheels'), title: 'Flex Wheels', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Flex Wheels', "Compressible wheels that are useful for intakes, flywheels, and even drivetrains.") },
+    { id: slugify('Mecanum Wheels'), title: 'Mecanum Wheels', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Mecanum Wheels', "Clever programmers can take advantage of mecanum wheels to improve maneuverability in the autonomous period.") },
+    { id: slugify('Omnidirectional Wheels'), title: 'Omnidirectional Wheels', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Omnidirectional Wheels', "Wheels that have a multitude of degrees of freedom thanks to their rollers.") },
+    { id: slugify('Traction Wheels'), title: 'Traction Wheels', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Traction Wheels', "Mitigate the effects of opposing defense with traction wheels.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Lifts'),
+  category: 'Hardware',
+  title: 'Lifts',
+  description: 'Double Reverse Four Bar (DR4B), Four Bar Lifts, Scissor Lifts, Six Bar Lifts, Other Lift Designs, Best Practices for Lifts',
+  duration: 'Approx. 90 min',
+  lessons: 6,
+  difficulty: 'Intermediate',
+  color: 'green',
+  icon: Layers,
+  content: {
+   lessons: [
+    { id: slugify('Double Reverse Four Bar (DR4B)'), title: 'Double Reverse Four Bar (DR4B)', type: 'lesson', xp: 30, contentDetail: generateContentDetail('Double Reverse Four Bar (DR4B)', "The mighty Double Reverse Four Bar. The double reverse four bar (also referred to as DR4B or RD4B) lift is one of the more complicated lift designs used in VEX Robotics competitions.") },
+    { id: slugify('Four Bar Lifts'), title: 'Four Bar Lifts', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Four Bar Lifts', "The 4 bar lift, the simplest linkage for keeping both ends parallel. The four bar lift is one of the most used lifts in VEX Robotics competitions due to its relative simplicity and ease of building.") },
+    { id: slugify('Scissor Lifts'), title: 'Scissor Lifts', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Scissor Lifts', "The tall and controversial scissor lift. The scissor lift is named because of its overlapping metal bars that open and close similarly to scissors.") },
+    { id: slugify('Six Bar Lifts'), title: 'Six Bar Lifts', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Six Bar Lifts', "The six bar lift, the four bar's big brother. The six bar lift is a derivative of the four bar lift.") },
+    { id: slugify('Other Lift Designs'), title: 'Other Lift Designs', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Other Lift Designs', "Other lifts that could possibly be found on robots, such as Two Bars, Chain Bars, and Elevator/Cascade Lifts.") },
+    { id: slugify('Best Practices for Lifts'), title: 'Best Practices for Lifts', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Best Practices for Lifts', "Tips and Tricks for building good lifts, focusing on bracing and joints.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Shooting Mechanisms'),
+  category: 'Hardware',
+  title: 'Shooting Mechanisms',
+  description: 'Catapult Designs, Flywheel Shooters, Linear Punchers',
+  duration: 'Approx. 60 min',
+  lessons: 3,
+  difficulty: 'Intermediate',
+  color: 'orange',
+  icon: Crosshair,
+  content: {
+   lessons: [
+    { id: slugify('Catapult Designs'), title: 'Catapult Designs', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Catapult Designs', "Flingin' things. A catapult is a launching mechanism that utilizes rotational movement in order to fire objects.") },
+    { id: slugify('Flywheel Shooters'), title: 'Flywheel Shooters', type: 'lesson', xp: 30, contentDetail: generateContentDetail('Flywheel Shooters', "Shooting things and busting encoders. A flywheel is a mechanism that is designed to store rotational energy as efficiently as possible.") },
+    { id: slugify('Linear Punchers'), title: 'Linear Punchers', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Linear Punchers', "Linear punchers are one of the simplest, yet most effective ball-launching mechanisms.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Drivetrains'),
+  category: 'Hardware',
+  title: 'Drivetrains',
+  description: 'Tank Drive, Mecanum Drive, Holonomic Drive (Non-Mecanum), Designing a Drivetrain, Drivetrain Best Practices',
+  duration: 'Approx. 90 min',
+  lessons: 5,
+  difficulty: 'Intermediate',
+  color: 'red',
+  icon: Truck,
+  content: {
+   lessons: [
+    { id: slugify('Tank Drive'), title: 'Tank Drive', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Tank Drive', "Tank drives are a very popular type of drivetrain used in the VEX Robotics Competition.") },
+    { id: slugify('Mecanum Drive'), title: 'Mecanum Drive', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Mecanum Drive', "The Mecanum Drive is just as simple to build as the Tank Drive, but has the ability to drive sideways.") },
+    { id: slugify('Holonomic Drive (Non-Mecanum)'), title: 'Holonomic Drive (Non-Mecanum)', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Holonomic Drive (Non-Mecanum)', "Holonomic drives have become a popular choice for VEX Robotics teams due to their enhanced maneuverability and flexibility in movement. This primarily covers X-Drives and H-Drives.") },
+    { id: slugify('Designing a Drivetrain'), title: 'Designing a Drivetrain', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Designing a Drivetrain', "The performance of any drivetrain is based not only on the type selected, but also on the quality with which it is designed and built.") },
+    { id: slugify('Drivetrain Best Practices'), title: 'Drivetrain Best Practices', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Drivetrain Best Practices', "This video does a great job show casing some of the best practices when building a drivetrain, focusing on core components like bearing blocks, standoffs, and C-Channels.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Advanced Building Techniques'),
+  category: 'Hardware',
+  title: 'Advanced Building Techniques',
+  description: 'Pivots and Joints, Pneumatics Systems & Best Practices, Intake Mechanisms, Flip Out Mechanisms, Defensive Mechanisms, Miscellaneous Building Techniques',
+  duration: 'Approx. 100 min',
+  lessons: 6,
+  difficulty: 'Advanced',
+  color: 'blue',
+  icon: Wrench,
+  content: {
+   lessons: [
+    { id: slugify('Pivots and Joints'), title: 'Pivots and Joints', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Pivots and Joints', "Joints are attachment points between components used to create mechanisms based on rotation. Covers Single-Bearing Screw Joint, Compact Screw Joint, and Axle Joints.") },
+    { id: slugify('Pneumatics Systems and Best Practices'), title: 'Pneumatics Systems & Best Practices', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Pneumatics Systems & Best Practices', "Frankly this is just a lot of hot air... Introduction to pneumatics components, subsystems, and best practices for design, construction, and operation.") },
+    { id: slugify('Intake Mechanisms'), title: 'Intake Mechanisms', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Intake Mechanisms', "Tips on building a good intake, regardless of the game. Intakes are one of the most common, versatile, and useful mechanisms in VEX Robotics.") },
+    { id: slugify('Flip Out Mechanisms'), title: 'Flip Out Mechanisms', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Flip Out Mechanisms', "Tips on building mechanisms that extend outside of the robot's starting size. A lot of times a robot will need to have a mechanism that \"flips out\".") },
+    { id: slugify('Defensive Mechanisms'), title: 'Defensive Mechanisms', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Defensive Mechanisms', "With VRC drives becoming more powerful, Defensive Mechanisms can help give teams an edge when it comes to defensive play. Covers wedges, skirts, and defensive wheel setups.") },
+    { id: slugify('Miscellaneous Building Techniques'), title: 'Miscellaneous Building Techniques', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Miscellaneous Building Techniques', "Outside of specific mechanisms and subsystems, which have their own section, there is much general information that can be applicable in many applications when building. Covers Box Bracing, Custom Plastic Parts, and Connecting Gears to Wheels.") },
+   ]
+  }
+ },
+ {
+  id: slugify('Robot Decorations and Customization'),
+  category: 'Hardware',
+  title: 'Robot Decorations & Customization',
+  description: 'Robot Decoration Rules Overview, License Plate Holders, Metal Coloring Techniques, Plastic Part Dyeing',
+  duration: 'Approx. 60 min',
+  lessons: 4,
+  difficulty: 'Beginner',
+  color: 'pink',
+  icon: Target,
+  content: {
+   lessons: [
+    { id: slugify('Robot Decoration Rules Overview'), title: 'Robot Decoration Rules Overview', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Robot Decoration Rules Overview', "The biggest thing to know about decorations is that Decorations are Allowed, Certain non-VEX components are allowed, and A limited amount of custom plastic is allowed.") },
+    { id: slugify('License Plate Holders'), title: 'License Plate Holders', type: 'lesson', xp: 15, contentDetail: generateContentDetail('License Plate Holders', "Non-functional 3D printed license plates, are permitted, including any supporting structures whose sole purpose is to hold, mount, or display an official license plate.") },
+    { id: slugify('Metal Coloring Techniques'), title: 'Metal Coloring Techniques', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Metal Coloring Techniques', "Covers painting and anodizing VEX metal parts, including tips and vendor information.") },
+    { id: slugify('Plastic Part Dyeing'), title: 'Plastic Part Dyeing', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Plastic Part Dyeing', "This article contains dangerous actions that should only be taken with adult supervision. Instructions on dyeing VEX plastic parts using Rit DyeMore.") },
+   ]
+  },
+ },
+ {
+  id: slugify('Team Administration'),
+  category: 'Team Management',
+  title: 'Team Administration',
+  description: 'New Team Resources, Team Dynamics and Roles, Team Finances and Fundraising, Hosting VEX Competitions',
+  duration: 'Approx. 60 min',
+  lessons: 4,
+  difficulty: 'Beginner',
+  color: 'green',
+  icon: Award,
+  content: {
+   lessons: [
+    { id: slugify('New Team Resources'), title: 'New Team Resources', type: 'lesson', xp: 20, contentDetail: generateContentDetail('New Team Resources', "Essential steps and resources for starting a new VEX robotics team, including registration, grants, and initial equipment.") },
+    { id: slugify('Team Dynamics and Roles'), title: 'Team Dynamics and Roles', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Team Dynamics and Roles', "Building a cohesive team: defining roles (builder, programmer, driver, notebooker), communication, and conflict resolution.") },
+    { id: slugify('Team Finances and Fundraising'), title: 'Team Finances and Fundraising', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Team Finances and Fundraising', "Managing team budgets, fundraising strategies, sponsorships, and financial planning for parts, registration, and travel.") },
+    { id: slugify('Hosting VEX Competitions'), title: 'Hosting VEX Competitions', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Hosting VEX Competitions', "A guide for teams interested in hosting their own VEX scrimmages or official events, covering logistics, volunteering, and RECF requirements.") },
+    ]
+  }
+ },
+ {
+  id: slugify('The Judging Process'),
+  category: 'Competition',
+  title: 'The Judging Process',
+  description: 'The Engineering Design Process Explained, Effective Testing and Refinement, The Engineering Notebook Excellence, The Team Interview, Understanding the Interview Rubric, Using Notion for Engineering Notebook',
+  duration: 'Approx. 90 min',
+  lessons: 6,
+  difficulty: 'Intermediate',
+  color: 'orange',
+  icon: BookOpen,
+  content: {
+   lessons: [
+    { id: slugify('The Engineering Design Process Explained'), title: 'The Engineering Design Process Explained', type: 'lesson', xp: 20, contentDetail: generateContentDetail('The Engineering Design Process Explained', "A deep dive into the iterative Engineering Design Process (Identify, Brainstorm, Design, Build, Test, Iterate) as it applies to VEX.") },
+    { id: slugify('Effective Testing and Refinement'), title: 'Effective Testing and Refinement', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Effective Testing and Refinement', "Strategies for systematically testing your robot, collecting data, and using that data to make informed design improvements.") },
+    { id: slugify('The Engineering Notebook Excellence'), title: 'The Engineering Notebook Excellence', type: 'lesson', xp: 30, contentDetail: generateContentDetail('The Engineering Notebook Excellence', "How to create an award-winning engineering notebook: content, organization, detail, and showcasing your design journey.") },
+    { id: slugify('The Team Interview'), title: 'The Team Interview', type: 'lesson', xp: 25, contentDetail: generateContentDetail('The Team Interview', "Preparing for the team interview with judges: common questions, presentation skills, and effectively communicating your robot's design and team's efforts.") },
+    { id: slugify('Understanding the Interview Rubric'), title: 'Understanding the Interview Rubric', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Understanding the Interview Rubric', "Breaking down the official judging rubrics to understand what judges are looking for and how to maximize your scores.") },
+    { id: slugify('Using Notion for Engineering Notebook'), title: 'Using Notion for Engineering Notebook', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Using Notion for Engineering Notebook', "A practical guide on leveraging Notion (or similar digital tools) for creating a dynamic and well-organized digital engineering notebook.") },
+    ]
+  }
+ },
+ {
+  id: slugify('VEX CAD'),
+  category: 'CAD',
+  title: 'VEX CAD',
+  description: 'CAD Programs Overview (VEX Focus), Inventor Chassis Design: The Basics, Inventor Chassis: Best Practices, Fusion 360 Chassis Design, SolidWorks: Chassis, Chain, Custom Plastic, Remembering The Best (CAD Inspiration), Scuff Controller CAD Design',
+  duration: 'Approx. 120 min',
+  lessons: 7,
+  difficulty: 'Advanced',
+  color: 'red',
+  icon: SquarePen,
+  content: {
+   lessons: [
+    { id: slugify('CAD Programs Overview (VEX Focus)'), title: 'CAD Programs Overview (VEX Focus)', type: 'lesson', xp: 20, contentDetail: generateContentDetail('CAD Programs Overview (VEX Focus)', "Comparison of popular CAD software for VEX (Inventor, Fusion 360, SolidWorks, OnShape), their pros/cons, and VEX part libraries. Includes Protobot info.") },
+    { id: slugify('Inventor Chassis Design Basics'), title: 'Inventor Chassis Design: The Basics', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Inventor Chassis Design: The Basics', "Step-by-step guide to designing a basic VEX drivetrain chassis in Autodesk Inventor.") },
+    { id: slugify('Inventor Chassis Best Practices'), title: 'Inventor Chassis: Best Practices', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Inventor Chassis: Best Practices', "Advanced techniques and best practices for efficient and robust chassis design in Inventor, including constraints and assemblies.") },
+    { id: slugify('Fusion 360 Chassis Design'), title: 'Fusion 360 Chassis Design', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Fusion 360 Chassis Design', "Designing a VEX chassis using Autodesk Fusion 360, highlighting its features and workflow.") },
+    { id: slugify('SolidWorks Chassis Chain Custom Plastic'), title: 'SolidWorks: Chassis, Chain, Custom Plastic', type: 'lesson', xp: 30, contentDetail: generateContentDetail('SolidWorks: Chassis, Chain, Custom Plastic', "Using SolidWorks for VEX robot design, including chassis, chain generation, and designing custom 3D printable plastic parts.") },
+    { id: slugify('Remembering The Best (CAD Inspiration)'), title: 'Remembering The Best (CAD Inspiration)', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Remembering The Best (CAD Inspiration)', "Showcase of exemplary VEX CAD models and design approaches from past competitions to inspire new ideas.") },
+    { id: slugify('Scuff Controller CAD Design'), title: 'Scuff Controller CAD Design', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Scuff Controller CAD Design', "Tips and considerations for designing custom controller modifications or accessories using CAD (if rules permit).") },
+    ]
+  }
+ },
+ {
+  id: slugify('Advanced Robotics Software'),
+  category: 'Software',
+  title: 'Advanced Robotics Software',
+  description: 'Odometry and Position Tracking, Path Planning Algorithms, Robotics Basics: Drive Controls, Code Organization and Version Control, Advanced Control Algorithms (PID and beyond), Competition Programming Strategies, C++ Fundamentals for VEX',
+  duration: 'Approx. 150 min',
+  lessons: 7,
+  difficulty: 'Advanced',
+  color: 'blue',
+  icon: Terminal,
+  content: {
+   lessons: [
+    { id: slugify('Odometry and Position Tracking'), title: 'Odometry and Position Tracking', type: 'lesson', xp: 30, contentDetail: generateContentDetail('Odometry and Position Tracking', "Implementing odometry using tracking wheels or motor encoders to accurately determine robot position and orientation on the field.") },
+    { id: slugify('Path Planning Algorithms'), title: 'Path Planning Algorithms', type: 'lesson', xp: 30, contentDetail: generateContentDetail('Path Planning Algorithms', "Introduction to path planning concepts (e.g., A*, Pure Pursuit) for generating smooth and efficient autonomous robot movements.") },
+    { id: slugify('Robotics Basics Drive Controls'), title: 'Robotics Basics: Drive Controls', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Robotics Basics: Drive Controls', "Exploring different drive controls (Arcade, Tank, Curvature/Cheesy Drive), joystick deadzones, and toggling subsystems for intuitive driver control.") },
+    { id: slugify('Code Organization and Version Control'), title: 'Code Organization and Version Control', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Code Organization and Version Control', "Best practices for structuring robot code, using functions, classes, code styling guides (e.g., Google C++ Style Guide), writing good comments, and employing version control (e.g., Git).") },
+    { id: slugify('Advanced Control Algorithms'), title: 'Advanced Control Algorithms (PID and beyond)', type: 'lesson', xp: 35, contentDetail: generateContentDetail('Advanced Control Algorithms (PID and beyond)', "In-depth look at PID controllers, Bang-Bang, Flywheel Velocity Control (TBH, Kalman Filter concepts), RAMSETE, and Basic Pure Pursuit for precise mechanism and motion control.") },
+    { id: slugify('Competition Programming Strategies'), title: 'Competition Programming Strategies', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Competition Programming Strategies', "Developing robust operator control schemes and complex autonomous routines, including sensor integration and decision making for competitions.") },
+    { id: slugify('C++ Fundamentals for VEX'), title: 'C++ Fundamentals for VEX', type: 'lesson', xp: 25, contentDetail: generateContentDetail('C++ Fundamentals for VEX', "Key C++ concepts for VEX programming: basic control flow (if, else, loops), enumerations, namespaces, and managing multiple source files (header/source).") },
+    ]
+  }
+ },
+ {
+  id: slugify('Software Tools and Techniques'),
+  category: 'Software',
+  title: 'Software Tools and Techniques',
+  description: 'VEX Programming Software Overview (Non-VEXcode), Introduction to Object Recognition',
+  duration: 'Approx. 60 min',
+  lessons: 2,
+  difficulty: 'Intermediate',
+  color: 'green',
+  icon: Code,
+  content: {
+   lessons: [
+    { id: slugify('VEX Programming Software Overview (Non-VEXcode)'), title: 'VEX Programming Software Overview (Non-VEXcode)', type: 'lesson', xp: 25, contentDetail: generateContentDetail('VEX Programming Software Overview (Non-VEXcode)', "Overview of PROS, vexide, Robot Mesh Studio (RMS), EasyC, RobotC, and Midnight C, discussing their features and use cases for different skill levels and needs.") },
+    { id: slugify('Introduction to Object Recognition'), title: 'Introduction to Object Recognition', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Introduction to Object Recognition', "Basics of using vision sensors or simple computer vision algorithms for recognizing game elements or field features in VEX.") },
+    ]
+  }
+ },
+ {
+  id: slugify('AI in VRC Pac-Man Pete'),
+  category: 'AI',
+  title: 'AI in VRC: Pac-Man Pete',
+  description: 'Understanding AI in VRC Context, Pac-Man Pete Case Study, Implementing Basic AI Behaviors',
+  duration: 'Approx. 45 min',
+  lessons: 3,
+  difficulty: 'Advanced',
+  color: 'green',
+  icon: Bot,
+  content: {
+   lessons: [
+    { id: slugify('Understanding AI in VRC Context'), title: 'Understanding AI in VRC Context', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Understanding AI in VRC Context', "Exploring what AI means in the context of VRC, from simple decision trees to more complex sensor-based behaviors.") },
+    { id: slugify('Pac-Man Pete Case Study'), title: 'Pac-Man Pete Case Study', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Pac-Man Pete Case Study', "Analyzing the design and programming of AI-driven robots like 'Pac-Man Pete', focusing on strategy and implementation.") },
+    { id: slugify('Implementing Basic AI Behaviors'), title: 'Implementing Basic AI Behaviors', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Implementing Basic AI Behaviors', "Practical steps for programming simple autonomous decision-making and reactive behaviors in your VEX robot.") },
+    ]
+  }
+ },
+ {
+  id: slugify('VEX Electronics Deep Dive'),
+  category: 'Electronics',
+  title: 'VEX Electronics Deep Dive',
+  description: 'V5 ESD Protection Board, Core VEX Electronic Components, V5 Brain Wiring Guide',
+  duration: 'Approx. 60 min',
+  lessons: 3,
+  difficulty: 'Intermediate',
+  color: 'orange',
+  icon: CircuitBoard,
+  content: {
+   lessons: [
+    { id: slugify('V5 ESD Protection Board'), title: 'V5 ESD Protection Board', type: 'lesson', xp: 20, contentDetail: generateContentDetail('V5 ESD Protection Board', "Understanding the purpose and proper use of the V5 Electrostatic Discharge (ESD) Protection Board for safeguarding your electronics.") },
+    { id: slugify('Core VEX Electronic Components'), title: 'Core VEX Electronic Components', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Core VEX Electronic Components', "Detailed overview of the V5 Brain, V5 Smart Motors, V5 Robot Battery, Controller, and their electrical characteristics and connections.") },
+    { id: slugify('V5 Brain Wiring Guide'), title: 'V5 Brain Wiring Guide', type: 'lesson', xp: 20, contentDetail: generateContentDetail('V5 Brain Wiring Guide', "Best practices for wiring the V5 Brain, including Smart Ports, legacy ports, power connections, and wire management to prevent issues.") },
+    ]
+  }
+ },
+ {
+  id: slugify('VEX Sensors In-Depth'),
+  category: 'Sensors',
+  title: 'VEX Sensors In-Depth',
+  description: '3-Pin / ADI Sensors, Smart Port Sensors',
+  duration: 'Approx. 75 min',
+  lessons: 2,
+  difficulty: 'Intermediate',
+  color: 'red',
+  icon: Radar,
+  content: {
+   lessons: [
+    { id: slugify('3-Pin ADI Sensors'), title: '3-Pin / ADI Sensors', type: 'lesson', xp: 30, contentDetail: generateContentDetail('3-Pin / ADI Sensors', "Exploring legacy 3-pin sensors: Encoder, Potentiometer, Limit Switch, Bumper Switch, Accelerometer, Gyroscope, Ultrasonic, Line Tracker, and LED Indicator. Learn their function, wiring, and programming.") },
+    { id: slugify('Smart Port Sensors'), title: 'Smart Port Sensors', type: 'lesson', xp: 30, contentDetail: generateContentDetail('Smart Port Sensors', "Detailed look at V5 Smart Port sensors: GPS Sensor, Rotation Sensor, Vision Sensor, Optical Sensor, Distance Sensor, Inertial Sensor (IMU), and the 3-Wire Expander. Understand their capabilities and integration.") },
+    ]
+  }
+ }
+], []);
   const sampleQuizzes = useMemo(() => ({
+    'gear-ratios-in-depth': { 
+      title: 'Gear Ratios Quiz',
+      questions: [
+        { id: 1, question: 'If a 12-tooth gear drives a 60-tooth gear, what is the speed ratio?', options: ['1:5 (output is 5x faster)', '5:1 (output is 5x slower)', '1:1', 'Cannot be determined'], correct: 1, explanation: 'The output gear is 5 times larger, so it will spin 5 times slower. Speed ratio is input:output, so 1:5. Torque is multiplied by 5.' },
+        { id: 2, question: 'What is a compound gear ratio?', options: ['A ratio with more than two gears', 'Multiple gear pairs where the output of one pair is the input to the next', 'A gear ratio that is difficult to calculate', 'A gear ratio used only in drivetrains'], correct: 1, explanation: 'A compound gear ratio involves multiple gear pairs, multiplying their individual ratios to achieve a larger overall ratio.' },
+      ]
+    },
     'intro-knowledge-check': {
       title: 'V5 Fundamentals Quiz',
       questions: [
@@ -152,20 +1061,14 @@ const App = () => {
         { id: 3, question: 'What is a primary function of the VEX V5 Inertial Sensor (IMU)?', options: ['Detecting colors', 'Measuring distance to objects', 'Measuring orientation and heading', 'Controlling motor speed directly'], correct: 2, explanation: 'The IMU is crucial for determining the robot\'s orientation, including heading, roll, and pitch.' },
       ]
     },
-    'building-quiz': {
+    'building-quiz': { 
       title: 'Building Principles Quiz',
       questions: [
         { id: 1, question: 'What is the primary benefit of triangulation in robot structures?', options: ['Reduces weight', 'Increases electrical conductivity', 'Increases rigidity and strength', 'Makes the robot look cooler'], correct: 2, explanation: 'Triangulation is a key engineering principle to create strong and rigid structures by distributing forces effectively.' },
         { id: 2, question: 'If a 12-tooth gear drives a 36-tooth gear, what is the gear ratio for torque?', options: ['1:3 (torque divided by 3)', '3:1 (torque multiplied by 3)', '1:1 (no change)', '2:1 (torque multiplied by 2)'], correct: 1, explanation: 'The ratio is 36/12 = 3:1. This means the output (driven gear) has 3 times the torque and 1/3 the speed of the input (driving gear).' },
       ]
     },
-    'python-sensor-quiz': {
-      title: 'Python Sensor Quiz',
-      questions: [
-        { id: 1, question: 'In VEXcode V5 Python, how do you get the distance value from a Distance Sensor named `distance_sensor`?', options: ['distance_sensor.value()', 'distance_sensor.distance(MM)', 'distance_sensor.get_distance()', 'distance_sensor.read()'], correct: 1, explanation: 'Typically, methods like `object.distance(UNITS)` are used.' },
-      ]
-    },
-    'cad-assembly-quiz': {
+    'cad-assembly-quiz': { 
       title: 'Basic Assembly Concepts Quiz',
       questions: [
         { id: 1, question: 'What is a "mate" in CAD assembly?', options: ['A duplicate part', 'A constraint that defines the relationship between parts', 'A type of screw', 'A rendering style'], correct: 1, explanation: 'Mates (or joints) define how parts are positioned and move relative to each other in an assembly.' },
@@ -174,13 +1077,13 @@ const App = () => {
   }), []);
 
   const sampleGames = useMemo(() => ({
-    'design-challenge-game': {
+    'design-challenge-game': { 
       title: 'Mini Design Challenge: Object Mover',
       type: 'simulation',
       instructions: 'Your robot needs to pick up a small cube from Zone A and place it in Zone B. Consider the arm design, gripper, and gear ratios. (This is a conceptual challenge. Click "Complete" to simulate successful design and testing.)',
       xp: 40,
     },
-    'auton-challenge': {
+    'auton-challenge': { 
       title: 'Mini Autonomous Challenge: Navigate Maze',
       type: 'simulation',
       instructions: 'Conceptually guide your robot through a simple maze using sensor logic. (Click "Complete" to simulate successful navigation.)',
@@ -191,14 +1094,16 @@ const App = () => {
   const vexpertChallengeBank = useMemo(() => [
     { id: 'vcq1', category: 'Hardware', difficulty: 'Easy', question: 'What is the typical voltage of a VEX V5 Robot Battery?', options: ['7.4V', '9.6V', '12V', '5V'], correctAnswerIndex: 2, explanation: 'VEX V5 Robot Batteries are nominally 12V.' },
     { id: 'vcq2', category: 'Hardware', difficulty: 'Medium', question: 'Which sensor is best for accurately measuring the robot\'s turning angle?', options: ['Optical Sensor', 'Distance Sensor', 'Bumper Switch', 'Inertial Sensor (IMU)'], correctAnswerIndex: 3, explanation: 'The Inertial Sensor (IMU) is designed to measure heading and rotation precisely.' },
-    { id: 'vcq3', category: 'Software', difficulty: 'Easy', question: 'In VEXcode V5 Blocks, what color are "Motion" blocks usually?', options: ['Green', 'Blue', 'Yellow', 'Red'], correctAnswerIndex: 1, explanation: 'Motion blocks, like those for driving or spinning motors, are typically blue in VEXcode V5 Blocks.' },
+    { id: 'vcq3', category: 'Software', difficulty: 'Easy', question: 'In C++ based VEX programming, what is often used to define a reusable block of code for a specific task?', options: ['A variable', 'A loop statement', 'A function', 'An array'], correctAnswerIndex: 2, explanation: 'Functions are fundamental for organizing code into reusable blocks for specific tasks in C++ and other languages.' },
     { id: 'vcq4', category: 'Software', difficulty: 'Medium', question: 'What does "PID" stand for in the context of robot motor control?', options: ['Positive Input Drive', 'Proportional Integral Derivative', 'Program Instruction Data', 'Power Intensity Diagram'], correctAnswerIndex: 1, explanation: 'PID is a control loop mechanism meaning Proportional, Integral, Derivative, used for precise motor control.' },
-    { id: 'vcq5', category: 'Building', difficulty: 'Medium', question: 'When attaching a V5 Smart Motor to a C-channel, what is a common cause of motor strain or damage?', options: ['Using too many screws', 'Misaligned screw holes causing stress', 'Not using bearing flats', 'Painting the motor'], correctAnswerIndex: 1, explanation: 'Misalignment can put stress on the motor casing and internal gears. Bearing flats support shafts, not direct motor mounting stress.'},
-    { id: 'vcq6', category: 'Game Strategy', difficulty: 'Easy', question: 'In many VEX Robotics Competition games, what is "Autonomous Period"?', options: ['A period where robots are manually controlled', 'A period where robots operate using pre-programmed instructions without driver input', 'The time allocated for building the robot', 'The inspection phase before a match'], correctAnswerIndex: 1, explanation: 'The Autonomous Period is when robots run solely on code written beforehand.'},
+    { id: 'vcq5', category: 'Hardware', difficulty: 'Medium', question: 'When attaching a V5 Smart Motor to a C-channel, what is a common cause of motor strain or damage?', options: ['Using too many screws', 'Misaligned screw holes causing stress', 'Not using bearing flats', 'Painting the motor'], correctAnswerIndex: 1, explanation: 'Misalignment can put stress on the motor casing and internal gears. Bearing flats support shafts, not direct motor mounting stress.'},
+    { id: 'vcq6', category: 'Competition', difficulty: 'Easy', question: 'In many VEX Robotics Competition games, what is "Autonomous Period"?', options: ['A period where robots are manually controlled', 'A period where robots operate using pre-programmed instructions without driver input', 'The time allocated for building the robot', 'The inspection phase before a match'], correctAnswerIndex: 1, explanation: 'The Autonomous Period is when robots run solely on code written beforehand.'},
     { id: 'vcq7', category: 'Hardware', difficulty: 'Hard', question: 'What is the primary advantage of using "Omni-Directional" wheels?', options: ['Higher torque', 'Ability to move in any direction without turning the robot\'s body', 'Better traction on rough surfaces', 'Lighter weight than regular wheels'], correctAnswerIndex: 1, explanation: 'Omni-directional wheels allow for holonomic movement, meaning translation in any direction (strafe).'},
-    { id: 'vcq8', category: 'Software', difficulty: 'Hard', question: 'What is a "function" in programming used for?', options: ['Storing a single variable', 'Repeating a block of code indefinitely', 'Grouping a set of instructions to perform a specific task, which can be reused', 'Defining the robot\'s physical dimensions'], correctAnswerIndex: 2, explanation: 'Functions help organize code into reusable blocks for specific tasks.'},
+    { id: 'vcq8', category: 'Software', difficulty: 'Hard', question: 'In C++, what is `::` typically used for?', options: ['Declaring a pointer', 'The scope resolution operator', 'Logical AND operator', 'Bitwise XOR operator'], correctAnswerIndex: 1, explanation: 'The `::` symbol is the scope resolution operator, used to access static members, enums, or members of a namespace or class.'},
     { id: 'vcq9', category: 'CAD', difficulty: 'Medium', question: 'In CAD, what is an "extrusion"?', options: ['A type of file format', 'A process of creating a 3D shape by extending a 2D profile along a path', 'A simulation of robot movement', 'A tool for measuring distances'], correctAnswerIndex: 1, explanation: 'Extrusion is a fundamental CAD operation to create 3D geometry from 2D sketches.'},
-    { id: 'vcq10', category: 'Building', difficulty: 'Medium', question: 'Why are bearings important for rotating shafts in VEX?', options: ['They add weight to the robot', 'They reduce friction and support the shaft', 'They help motors run cooler', 'They are only for decoration'], correctAnswerIndex: 1, explanation: 'Bearings reduce friction, prevent shafts from wobbling, and allow for smoother rotation.'}
+    { id: 'vcq10', category: 'Hardware', difficulty: 'Medium', question: 'Why are bearings important for rotating shafts in VEX?', options: ['They add weight to the robot', 'They reduce friction and support the shaft', 'They help motors run cooler', 'They are only for decoration'], correctAnswerIndex: 1, explanation: 'Bearings reduce friction, prevent shafts from wobbling, and allow for smoother rotation.'},
+    { id: 'vcq11', category: 'Electronics', difficulty: 'Medium', question: 'What is the main purpose of an ESD Protection Board in a VEX V5 system?', options: ['To increase motor power', 'To protect electronics from electrostatic discharge', 'To charge the robot battery faster', 'To provide extra USB ports'], correctAnswerIndex: 1, explanation: 'The ESD (Electrostatic Discharge) Protection Board helps safeguard sensitive electronic components from static electricity damage.' },
+    { id: 'vcq12', category: 'Sensors', difficulty: 'Medium', question: 'Which VEX sensor is typically used to detect lines for autonomous navigation?', options: ['Distance Sensor', 'Line Tracker / Optical Sensor', 'Bumper Switch', 'GPS Sensor'], correctAnswerIndex: 1, explanation: 'Line Trackers (an ADI sensor) or the Optical Sensor (Smart Port) are used to detect contrasting lines on the field.' },
   ], []);
 
   const fetchUserProfile = useCallback(async (firebaseUserId) => {
@@ -220,7 +1125,7 @@ const App = () => {
       console.error("Error in fetchUserProfile for Firebase UID:", firebaseUserId, error);
       return null;
     }
-  }, []); 
+  }, []);
 
   const fetchUserProgress = useCallback(async (firebaseUserId) => {
     console.log("Attempting to fetch user progress for Firebase UID:", firebaseUserId);
@@ -246,12 +1151,15 @@ const App = () => {
     console.log("Attempting to fetch team with ID:", teamId);
     if (!teamId) { setUserTeam(null); console.log("No teamId provided to fetchUserTeam."); return null; }
     if (!db) { console.error("[fetchUserTeam] Firestore 'db' instance is not available."); return null; }
-    
+
     try {
       const teamDocRef = doc(db, "teams", teamId);
       const teamSnap = await getDoc(teamDocRef);
       if (teamSnap.exists()) {
         const teamData = { id: teamSnap.id, ...teamSnap.data() };
+        if (!Array.isArray(teamData.memberIds)) {
+            teamData.memberIds = [];
+        }
         setUserTeam(teamData);
         console.log("Team data fetched:", teamData);
         return teamData;
@@ -274,28 +1182,28 @@ const App = () => {
       }
     } catch (error) {
       console.error("Error in fetchUserTeam for team ID:", teamId, error);
-      setUserTeam(null); 
+      setUserTeam(null);
       return null;
     }
-  }, []); 
+  }, []);
 
   useEffect(() => {
     console.log("App.js: Auth listener effect is running.");
     if (!auth) {
       console.error("App.js: Firebase 'auth' service is not available in onAuthStateChanged. Firebase might not be initialized correctly in Firebase.js or imported incorrectly.");
-      setLoading(false); 
+      setLoading(false);
       setMessage("Critical Firebase Error: Auth service not loaded. Please check console and Firebase.js configuration.");
-      return; 
+      return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseAuthUser) => {
       console.log("App.js: onAuthStateChanged triggered. Firebase Auth User:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
-      
+
       try {
         if (firebaseAuthUser) {
           console.log("App.js: Firebase Auth User signed in. UID:", firebaseAuthUser.uid);
-          setMessage("Firebase authenticated. Loading your Vexcel profile..."); 
-          
+          setMessage("Firebase authenticated. Loading your Vexcel profile...");
+
           let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
 
           if (!userProfile) {
@@ -310,8 +1218,8 @@ const App = () => {
               createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
             };
             console.log("[App.js] Attempting to create user profile with data:", JSON.stringify(newUserProfileData));
-            if (!db) { 
-              console.error("App.js: Firestore 'db' instance is NOT available for creating profile."); 
+            if (!db) {
+              console.error("App.js: Firestore 'db' instance is NOT available for creating profile.");
               throw new Error("Firestore not available for profile creation. Check Firebase.js and initialization logs.");
             }
             await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
@@ -330,11 +1238,11 @@ const App = () => {
             if (firebaseAuthUser.email && firebaseAuthUser.email !== userProfile.email) {
                 profileUpdates.email = firebaseAuthUser.email;
             }
-            
-            if (Object.keys(profileUpdates).length > 0) { 
+
+            if (Object.keys(profileUpdates).length > 0) {
                 console.log("[App.js] Attempting to update user profile with data:", JSON.stringify(profileUpdates));
-                if (!db) { 
-                  console.error("App.js: Firestore 'db' instance is NOT available for updating profile."); 
+                if (!db) {
+                  console.error("App.js: Firestore 'db' instance is NOT available for updating profile.");
                   throw new Error("Firestore not available for profile update. Check Firebase.js and initialization logs.");
                 }
                 await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
@@ -343,20 +1251,23 @@ const App = () => {
             console.log("App.js: Firestore profile UPDATED for UID:", firebaseAuthUser.uid);
           }
 
-          setUser(userProfile); 
+          setUser(userProfile);
           console.log("App.js: User state (Firestore profile) set. Fetching progress for UID:", firebaseAuthUser.uid);
           await fetchUserProgress(firebaseAuthUser.uid);
 
           if (userProfile.teamId) {
             console.log("App.js: User has teamId:", userProfile.teamId, ". Fetching team data.");
-            await fetchUserTeam(userProfile.teamId, userProfile.id);
+            const fetchedTeam = await fetchUserTeam(userProfile.teamId, userProfile.id);
+            if (!fetchedTeam) { 
+                setUser(prev => ({...prev, teamId: null}));
+            }
           } else {
             setUserTeam(null);
             console.log("App.js: User has no teamId.");
           }
-          
-          setCurrentView('dashboard'); 
-          setMessage(''); 
+
+          setCurrentView('dashboard');
+          setMessage('');
           console.log("App.js: User setup complete. View set to dashboard.");
 
         } else {
@@ -364,17 +1275,17 @@ const App = () => {
           setUser(null); setUserTeam(null); setUserProgress({});
           setCurrentView('login');
           setSelectedModule(null); setCurrentLesson(null);
-          setMessage(''); 
+          setMessage('');
         }
       } catch (error) {
         console.error("App.js: CRITICAL ERROR within onAuthStateChanged async block:", error);
         console.error("App.js: Firestore operation error details:", error.code, error.message, error.stack);
-        setUser(null); 
-        setUserTeam(null); 
-        setUserProgress({}); 
-        setCurrentView('login'); 
+        setUser(null);
+        setUserTeam(null);
+        setUserProgress({});
+        setCurrentView('login');
         setMessage(`Error setting up your session: ${error.message}. Please check the console and Firebase project setup (Firestore enabled & correct rules).`);
-        setActionLoading(false); 
+        setActionLoading(false);
       } finally {
         console.log("App.js: onAuthStateChanged finally block. setLoading(false).");
         setLoading(false);
@@ -385,16 +1296,29 @@ const App = () => {
       console.log("App.js: Auth listener cleaning up.");
       unsubscribe();
     };
-  }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]); 
+  }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]);
 
 
   useEffect(() => {
-    const categories = [...new Set(vexpertChallengeBank.map(q => q.category))].sort();
-    setAvailableChallengeCategories(categories);
+    const categories = [...new Set(vexpertChallengeBank.map(q => q.category).concat(learningModules.map(m => m.category)))].sort();
+    setAvailableChallengeCategories(categories.filter(Boolean)); 
     if (categories.length > 0 && selectedChallengeCategories.length === 0) {
-        setSelectedChallengeCategories(categories);
+        setSelectedChallengeCategories(categories.filter(Boolean));
     }
-  }, [vexpertChallengeBank, selectedChallengeCategories.length]);
+  }, [vexpertChallengeBank, learningModules, selectedChallengeCategories.length]);
+
+  const handleChallengeAnswer = useCallback((selectedIndex) => {
+    if (showChallengeAnswer) return; 
+    setShowChallengeAnswer(true);
+    setChallengeSelectedAnswer(selectedIndex); // Store user's choice for UI feedback
+    // Update the specific question in challengeQuestions to include selectedAnswer for the VexpertChallengeView
+    setChallengeQuestions(prevQuestions => prevQuestions.map((q, idx) => 
+        idx === currentChallengeQuestionIdx ? { ...q, selectedAnswer: selectedIndex } : q
+    ));
+    if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
+      setChallengeScore(s => s + 1);
+    }
+  }, [showChallengeAnswer, challengeQuestions, currentChallengeQuestionIdx]);
 
 
   useEffect(() => {
@@ -407,7 +1331,7 @@ const App = () => {
       handleChallengeAnswer(null); 
     }
     return () => clearInterval(interval);
-  }, [challengeState, challengeTimer, showChallengeAnswer]); 
+  }, [challengeState, challengeTimer, showChallengeAnswer, handleChallengeAnswer]);
 
 
   const handleLoginSuccess = async (credentialResponse) => {
@@ -418,7 +1342,7 @@ const App = () => {
         setActionLoading(false);
         return;
     }
-    setMessage('Successfully authenticated with Google. Signing into Vexcel...'); 
+    setMessage('Successfully authenticated with Google. Signing into Vexcel...');
     setActionLoading(true);
     try {
       const idToken = credentialResponse.credential;
@@ -438,7 +1362,7 @@ const App = () => {
       }
       googleLogout(); 
       setActionLoading(false); 
-    } 
+    }
   };
 
 
@@ -458,7 +1382,7 @@ const App = () => {
     }
     setActionLoading(true);
     try {
-      await firebaseSignOut(auth); 
+      await firebaseSignOut(auth);
       googleLogout(); 
       console.log("App.js: Firebase sign out and Google logout successful.");
     } catch (error) {
@@ -507,18 +1431,18 @@ const App = () => {
   useEffect(() => {
     if (user && user.xp !== undefined && user.level !== undefined && (Math.floor(user.xp / XP_PER_LEVEL) + 1) > user.level) {
       const newLevel = Math.floor(user.xp/XP_PER_LEVEL)+1;
-      setUser(prev => ({ ...prev, level: newLevel })); 
+      setUser(prev => ({ ...prev, level: newLevel }));
       setMessage(`🎉 Level Up! You are now Level ${newLevel}! Keep going!`);
       if(user.id && db) { 
           const userRef = doc(db, "users", user.id);
           updateDoc(userRef, { level: newLevel })
             .then(() => console.log("App.js: Level updated in Firestore for UID:", user.id))
             .catch(err => console.error("App.js: Error updating level in Firestore:", err));
-      } else if (!db) {
+      } else if (!db) { 
           console.error("App.js: Cannot update level in Firestore, 'db' instance is not available.");
       }
     }
-  }, [user, XP_PER_LEVEL]); 
+  }, [user]);
 
 
   const handleCompleteItem = async (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
@@ -534,7 +1458,8 @@ const App = () => {
       const batch = writeBatch(db);
       batch.update(userRef, { xp: increment(xpEarned) });
       const sanitizedLessonId = lessonId.replace(/\./g, '_'); 
-      const currentModuleProgSnap = await getDoc(progressDocRef); 
+      
+      const currentModuleProgSnap = await getDoc(progressDocRef);
       let currentModuleXp = 0;
       let existingLessons = {};
 
@@ -543,15 +1468,16 @@ const App = () => {
           currentModuleXp = currentData.moduleXp || 0;
           existingLessons = currentData.lessons || {};
       }
-      const updatedLessonData = { ...existingLessons, [sanitizedLessonId]: { completed: true, score: score } };
+      const updatedLessonData = { ...existingLessons, [sanitizedLessonId]: { completed: true, score: score } }; 
       batch.set(progressDocRef, { lessons: updatedLessonData, moduleXp: currentModuleXp + xpEarned }, { merge: true });
+
 
       if (userTeam && userTeam.id) {
         const teamRef = doc(db, "teams", userTeam.id);
         batch.update(teamRef, { totalXP: increment(xpEarned) });
       }
 
-      await batch.commit(); 
+      await batch.commit();
       console.log("App.js: Item completion saved to Firebase.");
 
       setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
@@ -561,9 +1487,8 @@ const App = () => {
         setUserTeam(prevTeam => ({ ...prevTeam, totalXP: updatedTeamTotalXP }));
         setAllTeams(prevAllTeams => prevAllTeams.map(t => t.id === userTeam.id ? { ...t, totalXP: updatedTeamTotalXP } : t));
       }
-      
-      if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
 
+      if (selectedModule && selectedModule.id === moduleId) setSelectedModule(prev => ({ ...prev }));
 
       setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
     } catch (error) {
@@ -575,49 +1500,63 @@ const App = () => {
   };
 
   const handleJoinTeam = async (teamCodeToJoinArg = joinTeamCodeInput) => {
-    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg : joinTeamCodeInput; 
-    if (!teamCodeToJoin.trim()) { setMessage("Please enter a team code."); return; }
-    if (userTeam) { setMessage("You are already in a team."); return; }
-    if (!user || !user.id) { setMessage("User not logged in."); return; }
-    if (!db) { setMessage("Database service unavailable."); return; }
+    const teamCodeToJoin = typeof teamCodeToJoinArg === 'string' ? teamCodeToJoinArg.trim() : joinTeamCodeInput.trim();
+    if (!teamCodeToJoin) { setMessage("Please enter a team code."); return; }
+    if (userTeam) { setMessage("You are already in a team. Leave your current team to join another."); return; }
+    if (!user || !user.id) { setMessage("User not logged in. Please sign in again."); return; }
+    if (!db) {setMessage("Database service unavailable. Cannot join team."); return;}
 
     console.log("App.js: handleJoinTeam called with code:", teamCodeToJoin, "for user:", user.id);
     setActionLoading(true);
     try {
-      const teamsQuery = query(collection(db, "teams"), where("code", "==", teamCodeToJoin.trim()));
+      const teamsQuery = query(collection(db, "teams"), where("code", "==", teamCodeToJoin));
       const querySnapshot = await getDocs(teamsQuery);
 
       if (querySnapshot.empty) {
-        setMessage("Invalid team code or team not found."); setActionLoading(false); return;
+        setMessage("Invalid team code or team not found."); 
+        setActionLoading(false); 
+        return;
       }
 
-      const teamDocSnap = querySnapshot.docs[0]; 
+      const teamDocSnap = querySnapshot.docs[0];
       const teamToJoinData = { id: teamDocSnap.id, ...teamDocSnap.data() };
+      if (!Array.isArray(teamToJoinData.memberIds)) {
+        teamToJoinData.memberIds = [];
+      }
 
-      if (teamToJoinData.memberIds && teamToJoinData.memberIds.includes(user.id)) {
+      if (teamToJoinData.memberIds.includes(user.id)) {
           setMessage(`You are already a member of ${teamToJoinData.name}.`);
           setUserTeam(teamToJoinData); 
           const userRefForConsistency = doc(db, "users", user.id);
-          await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
-          setActionLoading(false); return;
+          const userSnap = await getDoc(userRefForConsistency);
+          if (userSnap.exists() && userSnap.data().teamId !== teamToJoinData.id) {
+            await updateDoc(userRefForConsistency, { teamId: teamToJoinData.id });
+          }
+          setUser(prevUser => ({...prevUser, teamId: teamToJoinData.id})); 
+          setActionLoading(false); 
+          return;
       }
 
       const batch = writeBatch(db);
       const teamRef = doc(db, "teams", teamToJoinData.id);
-      batch.update(teamRef, { memberIds: arrayUnion(user.id) }); 
+      batch.update(teamRef, { memberIds: arrayUnion(user.id) });
 
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: teamToJoinData.id }); 
+      batch.update(userRef, { teamId: teamToJoinData.id });
 
       await batch.commit();
 
       const updatedTeamSnap = await getDoc(teamRef);
       const finalTeamData = {id: updatedTeamSnap.id, ...updatedTeamSnap.data()};
+      if (!Array.isArray(finalTeamData.memberIds)) { 
+        finalTeamData.memberIds = [];
+      }
 
-      setUserTeam(finalTeamData); 
+      setUserTeam(finalTeamData);
+      setUser(prevUser => ({...prevUser, teamId: finalTeamData.id}));
       setAllTeams(prevTeams => prevTeams.map(t => t.id === finalTeamData.id ? finalTeamData : t)); 
       setMessage(`Successfully joined team: ${finalTeamData.name}!`);
-      setJoinTeamCodeInput(''); 
+      setJoinTeamCodeInput('');
     } catch (error) {
       console.error("App.js: Error joining team:", error);
       setMessage("Failed to join team. " + error.message);
@@ -628,9 +1567,9 @@ const App = () => {
 
   const handleCreateTeam = async () => {
     if (!createTeamNameInput.trim()) { setMessage("Please enter a team name."); return; }
-    if (userTeam) { setMessage("You are already in a team."); return; }
-    if (!user || !user.id) { setMessage("User not logged in."); return; }
-    if (!db) {setMessage("Database service unavailable."); return;}
+    if (userTeam) { setMessage("You are already in a team. Leave your current team to create a new one."); return; }
+    if (!user || !user.id) { setMessage("User not logged in. Please sign in again."); return; }
+    if (!db) {setMessage("Database service unavailable. Cannot create team."); return;}
 
     console.log("App.js: handleCreateTeam called with name:", createTeamNameInput, "for user:", user.id);
     setActionLoading(true);
@@ -639,24 +1578,29 @@ const App = () => {
       const newTeamData = {
         name: createTeamNameInput.trim(),
         code: newTeamCode,
-        description: `A brand new Vexcel team led by ${user.name}!`,
+        description: `A brand new Vexcel team with ${user.name}!`,
         totalXP: user.xp || 0, 
-        memberIds: [user.id], 
+        memberIds: [user.id],
         creatorId: user.id,
         createdAt: serverTimestamp(),
       };
 
       const teamColRef = collection(db, "teams");
-      const teamDocRef = await addDoc(teamColRef, newTeamData); 
+      const teamDocRef = await addDoc(teamColRef, newTeamData);
 
       const userRef = doc(db, "users", user.id);
-      await updateDoc(userRef, { teamId: teamDocRef.id }); 
+      await updateDoc(userRef, { teamId: teamDocRef.id });
 
-      const createdTeamForState = { id: teamDocRef.id, ...newTeamData, members: 1 }; 
+      const createdTeamForState = { 
+          id: teamDocRef.id, 
+          ...newTeamData, 
+          members: 1 
+      };
       setUserTeam(createdTeamForState);
+      setUser(prevUser => ({...prevUser, teamId: teamDocRef.id})); 
       setAllTeams(prev => [...prev, createdTeamForState]); 
       setMessage(`Team "${createdTeamForState.name}" created! Your Team Code is: ${newTeamCode}`);
-      setCreateTeamNameInput(''); 
+      setCreateTeamNameInput('');
     } catch (error) {
       console.error("App.js: Error creating team:", error);
       setMessage("Failed to create team. " + error.message);
@@ -666,32 +1610,53 @@ const App = () => {
   };
 
   const handleLeaveTeam = async () => {
-    if (!userTeam || !userTeam.id || !user || !user.id) return; 
-    if (!db) {setMessage("Database service unavailable."); return;}
+    if (!userTeam || !userTeam.id || !user || !user.id) {
+        setMessage("Cannot leave team: No team or user identified.");
+        return;
+    }
+    if (!db) {setMessage("Database service unavailable. Cannot leave team."); return;}
 
     console.log("App.js: handleLeaveTeam called for team:", userTeam.id, "by user:", user.id);
     setActionLoading(true);
     try {
-      const teamName = userTeam.name; 
+      const teamId = userTeam.id;
+      const teamName = userTeam.name;
       const batch = writeBatch(db);
 
-      const teamRef = doc(db, "teams", userTeam.id);
-      batch.update(teamRef, { memberIds: arrayRemove(user.id) }); 
+      const teamRef = doc(db, "teams", teamId);
+      batch.update(teamRef, { memberIds: arrayRemove(user.id) });
 
       const userRef = doc(db, "users", user.id);
-      batch.update(userRef, { teamId: null }); 
+      batch.update(userRef, { teamId: null });
 
       await batch.commit();
 
+      const updatedTeamSnap = await getDoc(teamRef);
+      if (updatedTeamSnap.exists()) {
+        const updatedTeamData = updatedTeamSnap.data();
+        if (!updatedTeamData.memberIds || updatedTeamData.memberIds.length === 0) {
+          console.log(`Team ${teamName} (${teamId}) has 0 members after leave. Deleting team.`);
+          await deleteDoc(teamRef);
+          setAllTeams(prevTeams => prevTeams.filter(t => t.id !== teamId)); 
+          setMessage(`You have left team: ${teamName}. The team was empty and has been deleted.`);
+        } else {
+          setAllTeams(prevTeams =>
+            prevTeams.map(t =>
+              (t.id === teamId ?
+                { ...t, memberIds: updatedTeamData.memberIds, members: updatedTeamData.memberIds.length }
+                : t)
+            )
+          );
+          setMessage(`You have left team: ${teamName}.`);
+        }
+      } else {
+        setAllTeams(prevTeams => prevTeams.filter(t => t.id !== teamId));
+        setMessage(`You have left team: ${teamName}. The team seems to no longer exist.`);
+      }
+
       setUserTeam(null);
-      setAllTeams(prevTeams =>
-        prevTeams.map(t =>
-          (t.id === userTeam.id ?
-            { ...t, memberIds: t.memberIds?.filter(id => id !== user.id), members: (t.memberIds?.filter(id => id !== user.id).length || 0) }
-            : t)
-        )
-      );
-      setMessage(`You have left team: ${teamName}.`);
+      setUser(prevUser => ({...prevUser, teamId: null})); 
+
     } catch (error) {
       console.error("App.js: Error leaving team:", error);
       setMessage("Failed to leave team. " + error.message);
@@ -699,15 +1664,63 @@ const App = () => {
       setActionLoading(false);
     }
   };
-  
+
+  const handleDeleteTeam = async () => {
+    if (!userTeam || !userTeam.id || !user || !user.id) {
+        setMessage("Cannot delete team: No team or user identified.");
+        return;
+    }
+    if (user.id !== userTeam.creatorId) {
+        setMessage("Only the team creator can delete the team.");
+        return;
+    }
+    if (!db) {setMessage("Database service unavailable. Cannot delete team."); return;}
+
+    if (!window.confirm(`Are you sure you want to permanently delete team "${userTeam.name}"? This action cannot be undone.`)) {
+        return;
+    }
+
+    console.log("App.js: handleDeleteTeam called for team:", userTeam.id, "by owner:", user.id);
+    setActionLoading(true);
+    try {
+        const teamIdToDelete = userTeam.id;
+        const teamNameToDelete = userTeam.name;
+        const memberIdsToUpdate = userTeam.memberIds || [];
+
+        const batch = writeBatch(db);
+
+        const teamRef = doc(db, "teams", teamIdToDelete);
+        batch.delete(teamRef);
+
+        memberIdsToUpdate.forEach(memberId => {
+            const userRef = doc(db, "users", memberId);
+            batch.update(userRef, { teamId: null });
+        });
+
+        await batch.commit();
+
+        setUserTeam(null);
+        setUser(prevUser => ({...prevUser, teamId: null})); 
+        setAllTeams(prevTeams => prevTeams.filter(t => t.id !== teamIdToDelete));
+        setMessage(`Team "${teamNameToDelete}" has been successfully deleted.`);
+
+    } catch (error) {
+        console.error("App.js: Error deleting team:", error);
+        setMessage("Failed to delete team. " + error.message);
+    } finally {
+        setActionLoading(false);
+    }
+  };
+
+
   const fetchAllTeamsForBrowse = useCallback(async () => {
-    if (!db) { 
+    if (!db) {
         console.error("[fetchAllTeamsForBrowse] DB not available. Aborting fetch.");
         setMessage("Database error. Cannot fetch teams.");
-        return; 
+        return;
     }
-    if (currentView === 'browseTeams' || currentView === 'leaderboard') {
-      console.log(`[fetchAllTeamsForBrowse] Called for view: ${currentView}. Setting actionLoading TRUE.`);
+    if (user && (currentView === 'browseTeams' || currentView === 'leaderboard' || allTeams.length === 0)) {
+      console.log(`[fetchAllTeamsForBrowse] Called for view: ${currentView} or initial load. Setting actionLoading TRUE.`);
       setActionLoading(true);
       try {
         const teamsColRef = collection(db, "teams");
@@ -715,20 +1728,24 @@ const App = () => {
         if (currentView === 'leaderboard') {
           q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50));
           console.log("[fetchAllTeamsForBrowse] Querying for LEADERBOARD (orderBy totalXP desc, limit 50).");
-        } else { 
+        } else {
           q = query(teamsColRef, orderBy("createdAt", "desc"), limit(100)); 
-          console.log("[fetchAllTeamsForBrowse] Querying for BROWSE (orderBy createdAt desc, limit 100).");
+          console.log("[fetchAllTeamsForBrowse] Querying for BROWSE/INITIAL (orderBy createdAt desc, limit 100).");
         }
-        
+
         console.log(`[fetchAllTeamsForBrowse] Executing getDocs() for ${currentView}...`);
         const querySnapshot = await getDocs(q);
         console.log(`[fetchAllTeamsForBrowse] getDocs() completed. Found ${querySnapshot.docs.length} teams for ${currentView}.`);
-        
-        const loadedTeams = querySnapshot.docs.map(docSnap => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-          members: docSnap.data().memberIds?.length || 0 
-        }));
+
+        const loadedTeams = querySnapshot.docs.map(docSnap => {
+            const data = docSnap.data();
+            return {
+                id: docSnap.id,
+                ...data,
+                memberIds: Array.isArray(data.memberIds) ? data.memberIds : [], 
+                members: Array.isArray(data.memberIds) ? data.memberIds.length : 0 
+            };
+        });
         setAllTeams(loadedTeams);
         console.log(`[fetchAllTeamsForBrowse] setAllTeams done for ${currentView}. Team count: ${loadedTeams.length}`);
       } catch (error) {
@@ -740,18 +1757,20 @@ const App = () => {
         setActionLoading(false);
       }
     } else {
-        console.log(`[fetchAllTeamsForBrowse] Not fetching. Current view is ${currentView}, not browseTeams or leaderboard.`);
+        console.log(`[fetchAllTeamsForBrowse] Not fetching. Conditions not met. Current view: ${currentView}, User: ${!!user}, AllTeams length: ${allTeams.length}`);
     }
-  }, [currentView]); 
+  }, [currentView, user, allTeams.length]); 
 
   useEffect(() => {
-    fetchAllTeamsForBrowse();
-  }, [fetchAllTeamsForBrowse]); 
+    if (user) {
+        fetchAllTeamsForBrowse();
+    }
+  }, [user, fetchAllTeamsForBrowse]); 
 
 
   const startVexpertChallenge = () => {
     console.log("App.js: startVexpertChallenge called.");
-    setActionLoading(true); 
+    setActionLoading(true);
     if (selectedChallengeCategories.length === 0) {setMessage("Please select at least one category."); setActionLoading(false); return;}
     const filtered = vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category));
     if (filtered.length === 0) {setMessage("No questions for selected categories."); setActionLoading(false); return;}
@@ -764,30 +1783,21 @@ const App = () => {
     if (count <= 0) {setMessage("Cannot start with 0 questions."); setActionLoading(false); return;}
 
     const shuffled = [...filtered].sort(() => 0.5 - Math.random());
-    setChallengeQuestions(shuffled.slice(0, count));
+    setChallengeQuestions(shuffled.slice(0, count).map(q => ({...q, selectedAnswer: null}))); // Initialize selectedAnswer for each question
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0); setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
-    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false); 
+    setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false);
     setMessage(`Challenge started with ${count} questions! Good luck!`);
   };
 
 
-  const handleChallengeAnswer = (selectedIndex) => {
-    if (showChallengeAnswer) return; 
-    setShowChallengeAnswer(true); 
-    setChallengeSelectedAnswer(selectedIndex); 
-    if (selectedIndex === challengeQuestions[currentChallengeQuestionIdx].correctAnswerIndex) {
-      setChallengeScore(s => s + 1); 
-    }
-  };
-
   const handleNextChallengeQuestion = async () => {
-    setShowChallengeAnswer(false); 
-    setChallengeSelectedAnswer(null); 
+    setShowChallengeAnswer(false);
+    setChallengeSelectedAnswer(null); // Clear global selected answer
 
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
-      setCurrentChallengeQuestionIdx(i => i + 1); 
+      setCurrentChallengeQuestionIdx(i => i + 1);
       setChallengeTimer(QUESTION_TIMER_DURATION); 
-    } else {
+    } else { 
       setChallengeState('results');
       const xp = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
       console.log("App.js: Challenge finished. Score:", challengeScore, "XP:", xp);
@@ -799,7 +1809,7 @@ const App = () => {
           const userRef = doc(db, "users", user.id);
           batch.update(userRef, { xp: increment(xp) });
 
-          if (userTeam && userTeam.id) { 
+          if (userTeam && userTeam.id) {
             batch.update(doc(db, "teams", userTeam.id), { totalXP: increment(xp) });
           }
           await batch.commit();
@@ -831,610 +1841,6 @@ const App = () => {
     console.log("App.js: Challenge reset to configuration screen.");
   };
 
-  const Navigation = () => ( <nav className="nav">
-      <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
-        <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
-        <span className="brand-text">Vexcel</span>
-      </div>
-      {user && (
-        <div className="nav-items">
-          <button className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}><Home className="icon" />Dashboard</button>
-          <button className={`nav-item ${currentView === 'teams' ? 'active' : ''}`} onClick={() => navigate('teams')}><Users className="icon" />My Team</button>
-          <button className={`nav-item ${currentView === 'browseTeams' ? 'active' : ''}`} onClick={() => navigate('browseTeams')}><Search className="icon" />Browse Teams</button>
-          <button className={`nav-item ${currentView === 'leaderboard' ? 'active' : ''}`} onClick={() => navigate('leaderboard')}><Trophy className="icon" />Leaderboard</button>
-          <button className={`nav-item ${currentView === 'challenge' ? 'active' : ''}`} onClick={() => navigate('challenge')}><Puzzle className="icon" />Challenge</button>
-          <div className="nav-user">
-            <img src={user.avatar} alt={user.name} className="user-avatar" onError={(e)=>e.target.src='https://source.boringavatars.com/beam/120/default?colors=264653,2a9d8f,e9c46a,f4a261,e76f51'}/>
-            <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">Lvl {user.level} ({user.xp || 0} XP)</span></div>
-            <button onClick={handleLogout} className="logout-btn" title="Logout" disabled={actionLoading}><LogOut size={18}/></button>
-          </div>
-        </div>
-      )}
-    </nav>
-  );
-  const Dashboard = () => { if (!user) return null;
-    const modulesInProgress = learningModules.filter(m => {
-        const prog = userProgress[m.id];
-        return prog && Object.keys(prog.lessons).length > 0 && Object.keys(prog.lessons).length < m.lessons;
-    });
-    const recommendedNextModule = modulesInProgress.length > 0 ? modulesInProgress[0] : learningModules.find(m => !userProgress[m.id] || Object.keys(userProgress[m.id].lessons).length === 0);
-    const categorizedModules = learningModules.reduce((acc, module) => {
-        const category = module.category || 'General';
-        if (!acc[category]) acc[category] = [];
-        acc[category].push(module);
-        return acc;
-    }, {});
-    const categoryOrder = ['Hardware', 'Software', 'CAD', 'General'];
-
-    return (
-    <div className="dashboard">
-      <div className="dashboard-header">
-        <div className="welcome-section">
-          <h1>Welcome back, {user.name}!</h1>
-          <p>Ready to tackle new VEX challenges today?</p>
-        </div>
-        <div className="stats-grid">
-          <div className="stat-card"><Award className="stat-icon" /><div><span className="stat-value">{user.xp || 0}</span><span className="stat-label">Total XP</span></div></div>
-          <div className="stat-card"><Target className="stat-icon" /><div><span className="stat-value">{user.level}</span><span className="stat-label">Level</span></div></div>
-          <div className="stat-card"><Zap className="stat-icon" /><div><span className="stat-value">{user.streak}</span><span className="stat-label">Day Streak</span></div></div>
-        </div>
-      </div>
-      {userTeam && (
-        <div className="team-card">
-          <div className="team-info"> <Users className="team-icon" /> <div> <h3>{userTeam.name}</h3> <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • Code: <code>{userTeam.code}</code></p> </div> </div>
-          <div className="team-stats"><span className="team-xp">{(userTeam.totalXP || 0).toLocaleString()} XP</span></div>
-        </div>
-      )}
-      {recommendedNextModule && (
-          <div className="recommended-module-card" onClick={() => navigate('module', recommendedNextModule)}>
-              <div className="recommended-tag">Recommended Next</div>
-              <recommendedNextModule.icon className="module-icon" style={{color: `var(--color-${recommendedNextModule.color}-500)`}}/>
-              <h3>{recommendedNextModule.title}</h3>
-              <p>{recommendedNextModule.description.substring(0,100)}...</p>
-              <button className="start-btn small" disabled={actionLoading}>
-                  {userProgress[recommendedNextModule.id] && Object.keys(userProgress[recommendedNextModule.id].lessons).length > 0 ? 'Continue Module' : 'Start Module'} <ChevronRight className="icon-small"/>
-              </button>
-          </div>
-      )}
-      <div className="modules-section">
-        {categoryOrder.map(category => {
-            if (!categorizedModules[category] || categorizedModules[category].length === 0) return null;
-            return (
-                <div key={category} className="module-category-section">
-                    <h2 className="category-title">{category} Modules</h2>
-                    <div className="modules-grid">
-                    {categorizedModules[category].map((module) => {
-                        const Icon = module.icon;
-                        const prog = userProgress[module.id] || { lessons: {}, moduleXp: 0 };
-                        const completedCount = Object.values(prog.lessons).filter(l => l.completed).length;
-                        const progressPercent = module.lessons > 0 ? (completedCount / module.lessons) * 100 : 0;
-                        return (
-                        <div key={module.id} className={`module-card ${module.color}`} onClick={() => navigate('module', module)}>
-                            <div className="module-header"> <Icon className="module-icon" /> <div className="module-meta"> <span className="difficulty">{module.difficulty}</span> <span className="duration">{module.duration}</span> </div> </div>
-                            <h3>{module.title}</h3> <p>{module.description}</p>
-                            <div className="progress-section">
-                            <div className="progress-bar"><div className="progress-fill" style={{ width: `${progressPercent}%` }}></div></div>
-                            <span className="progress-text">{completedCount}/{module.lessons} items ({(prog.moduleXp || 0)} XP)</span>
-                            </div>
-                            <button className="start-btn" disabled={actionLoading}> {progressPercent === 100 ? 'Review Module' : progressPercent > 0 ? 'Continue Learning' : 'Start Learning'} <ChevronRight className="icon" /> </button>
-                        </div>
-                        );
-                    })}
-                    </div>
-                </div>
-            );
-        })}
-        </div>
-    </div>
-  )};
-  const ModuleView = () => { if (!selectedModule) return <p className="error-message">Module not found. Please go back to the dashboard.</p>;
-    const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
-    const Icon = selectedModule.icon;
-    return (
-      <div className="module-view">
-        <div className="module-view-header">
-          <button onClick={() => navigate('dashboard')} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to Dashboard</button>
-          <div className="module-title-section">
-            <Icon className="module-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}} />
-            <div>
-              <span className="category-tag-module">{selectedModule.category || 'General'}</span>
-              <h1>{selectedModule.title}</h1> <p>{selectedModule.description}</p>
-              <div className="module-badges"> <span className="badge">{selectedModule.difficulty}</span> <span className="badge">{selectedModule.duration}</span> <span className="badge">{selectedModule.lessons} items</span> </div>
-            </div>
-          </div>
-        </div>
-        <div className="lessons-list">
-          {selectedModule.content.lessons.map((lesson, index) => {
-            const lessonState = moduleProg.lessons[lesson.id.replace(/\./g, '_')] || { completed: false };
-            const isCompleted = lessonState.completed;
-            const prevLessonSanitizedId = index > 0 ? selectedModule.content.lessons[index - 1].id.replace(/\./g, '_') : null;
-            const isLocked = index > 0 && !(moduleProg.lessons[prevLessonSanitizedId]?.completed);
-            const LessonIcon = lesson.type === 'quiz' ? Puzzle : lesson.type === 'game' ? Play : MessageSquare;
-            return (
-              <div key={lesson.id} className={`lesson-item ${isCompleted ? 'completed' : ''} ${isLocked ? 'locked' : ''}`}
-                onClick={() => {
-                  if (actionLoading || (isLocked && !isCompleted)) return;
-                  if (lesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson });
-                  else if (lesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson });
-                  else if (lesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson });
-                }}>
-                <div className="lesson-number">{isCompleted ? <Check className="icon-small" /> : index + 1}</div>
-                <LessonIcon className="lesson-type-icon" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
-                <div className="lesson-content"> <h3>{lesson.title}</h3> <span className="lesson-type-badge">{lesson.type} (+{lesson.xp} XP)</span> </div>
-                <button className="lesson-btn" disabled={actionLoading || (isLocked && !isCompleted)}> {isCompleted ? 'Review' : (isLocked ? 'Locked' : 'Start')} <ChevronRight className="icon-small" /> </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-  const LessonContentView = () => { if (!currentLesson || !selectedModule) return <p className="error-message">Lesson content not found or module context missing.</p>;
-    const moduleProg = userProgress[selectedModule.id] || { lessons: {} };
-    const lessonState = moduleProg.lessons[currentLesson.id.replace(/\./g, '_')] || { completed: false };
-    const isCompleted = lessonState.completed;
-
-    const handleMarkCompleteAndContinue = () => {
-      if (actionLoading) return;
-      const sanitizedLessonId = currentLesson.id.replace(/\./g, '_');
-      if (!isCompleted) handleCompleteItem(selectedModule.id, sanitizedLessonId, currentLesson.type, null, currentLesson.xp);
-      const currentIndex = selectedModule.content.lessons.findIndex(l => l.id === currentLesson.id);
-      const nextLesson = selectedModule.content.lessons[currentIndex + 1];
-      if (nextLesson) {
-        const nextLessonProg = moduleProg.lessons[nextLesson.id.replace(/\./g, '_')] || { completed: false };
-        const currentNowCompleted = true; 
-        const isNextLocked = !(currentNowCompleted || nextLessonProg.completed) && currentIndex + 1 > 0; 
-
-        if (isNextLocked) { 
-            navigate('module', { id: selectedModule.id }); return;
-        }
-
-        if (nextLesson.type === 'lesson') navigate('lessonContent', { moduleId: selectedModule.id, lesson: nextLesson });
-        else if (nextLesson.type === 'quiz') navigate('quiz', { moduleId: selectedModule.id, lesson: nextLesson });
-        else if (nextLesson.type === 'game') navigate('game', { moduleId: selectedModule.id, lesson: nextLesson });
-        else navigate('module', { id: selectedModule.id }); 
-      } else navigate('module', { id: selectedModule.id }); 
-    };
-
-    return (
-      <div className="lesson-content-view">
-        <button onClick={() => navigate('module', {id: selectedModule.id})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated" /> Back to {selectedModule.title}</button>
-        <div className="lesson-title-header">
-            <MessageSquare className="lesson-type-icon-large" style={{color: `var(--color-${selectedModule.color}-500)`}}/>
-            <h2>{currentLesson.title}</h2>
-        </div>
-        <div className="content-area" dangerouslySetInnerHTML={{ __html: currentLesson.contentDetail || "<p>No detailed content available for this lesson.</p>" }} />
-        <button onClick={handleMarkCompleteAndContinue} className="complete-lesson-btn" disabled={actionLoading}>
-          {isCompleted ? 'Continue to Next Item' : `Mark as Complete & Continue (+${currentLesson.xp} XP)`}
-          <ChevronRight className="icon-small"/>
-        </button>
-      </div>
-    );
-  };
-  const QuizView = () => { const [currentQIdx, setCurrentQIdx] = useState(0);
-    const [selectedAns, setSelectedAns] = useState(null);
-    const [showRes, setShowRes] = useState(false);
-    const [quizScore, setQuizScore] = useState(0);
-    const [showExplanation, setShowExplanation] = useState(false);
-
-    if (!quizData || !quizData.lessonId) return <p className="error-message">Loading quiz...</p>;
-    const sanitizedLessonId = quizData.lessonId.replace(/\./g, '_');
-    const quizContent = sampleQuizzes[sanitizedLessonId];
-    if (!quizContent) return <p className="error-message">Quiz content not found for: {quizData.lessonId}</p>;
-
-    const handleAnsSelect = (idx) => { if (showExplanation || actionLoading) return; setSelectedAns(idx); }
-    const handleSubmitAnswer = () => {
-      if (selectedAns === null || actionLoading) return;
-      setShowExplanation(true);
-      const q = quizContent.questions[currentQIdx];
-      if (selectedAns === q.correct) { setQuizScore(s => s + 1); }
-    };
-    const handleNextQ = () => {
-      if (actionLoading) return;
-      setShowExplanation(false); setSelectedAns(null);
-      if (currentQIdx + 1 < quizContent.questions.length) {
-        setCurrentQIdx(i => i + 1);
-      } else {
-        setShowRes(true);
-        const finalScore = quizScore; 
-        const passPercent = 70; 
-        const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
-        if (!currentModuleProgress.completed && (finalScore / quizContent.questions.length) * 100 >= passPercent) {
-          handleCompleteItem(quizData.moduleId, sanitizedLessonId, 'quiz', finalScore, quizData.lesson.xp);
-        } else if (currentModuleProgress.completed) {
-            setMessage(`Quiz reviewed. Score: ${finalScore}/${quizContent.questions.length}. XP already earned.`);
-        }
-        else { 
-            setMessage(`Quiz attempt recorded. Score: ${finalScore}/${quizContent.questions.length}. You need ${passPercent}% to pass and earn XP.`);
-        }
-      }
-    };
-    const resetQuiz = () => { setCurrentQIdx(0); setSelectedAns(null); setShowRes(false); setQuizScore(0); setShowExplanation(false); };
-
-    if (showRes) {
-      const perc = Math.round((quizScore / quizContent.questions.length) * 100);
-      const passed = perc >= 70;
-      const currentModuleProgress = userProgress[quizData.moduleId]?.lessons[sanitizedLessonId] || {};
-      return (
-        <div className="quiz-result">
-          <div className={`result-icon ${passed ? 'success' : 'fail'}`}>{passed ? <Check /> : <X />}</div>
-          <h2>{passed ? 'Excellent Work!' : 'Keep Practicing!'}</h2>
-          <p>Your score: {quizScore}/{quizContent.questions.length} ({perc}%)</p>
-          {passed && !currentModuleProgress.completed && <p className="xp-earned">+{quizData.lesson.xp} XP Earned!</p>}
-          {passed && currentModuleProgress.completed && <p className="xp-earned">XP previously earned for this quiz.</p>}
-          {!passed && <p>You need 70% to pass and earn XP for this quiz.</p>}
-          <div className="result-actions">
-            <button onClick={resetQuiz} className="retry-btn" disabled={actionLoading}><RotateCcw className="icon-small"/> Try Again</button>
-            <button onClick={() => navigate('module', {id: quizData.moduleId})} className="continue-btn" disabled={actionLoading}>Back to Module <ChevronRight className="icon-small"/></button>
-          </div>
-        </div>
-      );
-    }
-    const q = quizContent.questions[currentQIdx];
-    return (
-      <div className="quiz-view">
-        <button onClick={() => navigate('module', {id: quizData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
-        <div className="quiz-header-info">
-            <Puzzle className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
-            <h2>{quizContent.title}</h2>
-            <div className="quiz-progress"><span>Question {currentQIdx + 1}/{quizContent.questions.length}</span><div className="progress-bar"><div style={{width: `${((currentQIdx+1)/quizContent.questions.length)*100}%`}}/></div></div>
-        </div>
-        <div className="question-card">
-          <h3>{q.question}</h3>
-          <div className="options-list">
-            {q.options.map((opt, i) =>
-                <button
-                    key={i}
-                    className={`option-btn ${selectedAns === i ? 'selected' : ''} ${showExplanation && q.correct === i ? 'correct' : ''} ${showExplanation && selectedAns === i && q.correct !== i ? 'incorrect' : ''}`}
-                    onClick={() => handleAnsSelect(i)}
-                    disabled={showExplanation || actionLoading}>
-                    <span className="option-letter">{String.fromCharCode(65+i)}</span>{opt}
-                </button>
-            )}
-          </div>
-          {showExplanation && q.explanation && (
-            <div className="explanation-box">
-              <strong>Explanation:</strong> {q.explanation}
-            </div>
-          )}
-          {!showExplanation && <button className="submit-btn" disabled={selectedAns === null || actionLoading} onClick={handleSubmitAnswer}>Submit Answer</button>}
-          {showExplanation && <button className="submit-btn" onClick={handleNextQ} disabled={actionLoading}>{currentQIdx + 1 === quizContent.questions.length ? 'Finish Quiz' : 'Next Question'}</button>}
-        </div>
-      </div>
-    );
-  };
-  const GameView = () => { if (!gameData || !gameData.lessonId) return <p className="error-message">Loading game...</p>;
-    const sanitizedLessonId = gameData.lessonId.replace(/\./g, '_');
-    const gameContent = sampleGames[sanitizedLessonId];
-    if (!gameContent) return <p className="error-message">Game content not found for: {gameData.lessonId}</p>;
-
-    const handleCompleteGame = () => {
-      if (actionLoading) return;
-      const isAlreadyCompleted = userProgress[gameData.moduleId]?.lessons[sanitizedLessonId]?.completed;
-      if (!isAlreadyCompleted) {
-        handleCompleteItem(gameData.moduleId, sanitizedLessonId, 'game', null, gameContent.xp || 30);
-        setMessage(`Challenge "${gameContent.title}" completed! +${gameContent.xp || 30} XP`);
-      } else {
-        setMessage(`Challenge "${gameContent.title}" reviewed. XP already earned.`);
-      }
-      navigate('module', {id: gameData.moduleId}); 
-    };
-
-    return (
-      <div className="game-view">
-        <button onClick={() => navigate('module', {id: gameData.moduleId})} className="back-btn" disabled={actionLoading}><ChevronRight className="icon rotated"/> Back to Module</button>
-        <div className="game-header-info">
-            <Play className="lesson-type-icon-large" style={{color: selectedModule ? `var(--color-${selectedModule.color}-500)` : '#3b82f6'}}/>
-            <h2>{gameContent.title}</h2>
-        </div>
-        <div className="game-container">
-          <p className="game-instructions">{gameContent.instructions}</p>
-          <div className="game-placeholder">Simulated Game Area / Conceptual Challenge</div>
-          <button onClick={handleCompleteGame} className="complete-game-btn" disabled={actionLoading}>Complete Challenge</button>
-        </div>
-      </div>
-    );
-  };
-  const TeamsView = () => { return (
-    <div className="teams-view">
-      <div className="view-header"> <Users className="header-icon" /> <h1>My Team</h1> <p>Manage your team or join/create a new one.</p> </div>
-      {userTeam ? (
-        <div className="current-team-card">
-          <div className="team-card-main">
-            <Users size={48} className="team-avatar-icon" style={{color: `var(--color-${userTeam.color || 'blue'}-500)`}}/>
-            <div>
-                <h2>{userTeam.name}</h2>
-                <p className="team-description-small">{userTeam.description}</p>
-                <p><strong>Team Code:</strong> <code className="team-code-display">{userTeam.code}</code> (Share this!)</p>
-                <p>{(userTeam.memberIds ? userTeam.memberIds.length : userTeam.members) || 0} members • Rank #{userTeam.rank || 'N/A'} • {(userTeam.totalXP || 0).toLocaleString()} Total XP</p>
-            </div>
-          </div>
-          <button className="leave-team-btn" onClick={handleLeaveTeam} disabled={actionLoading}>{actionLoading ? 'Processing...' : 'Leave Team'}</button>
-        </div>
-      ) : (
-        <div className="no-team-actions">
-          <div className="team-action-card">
-            <h3>Join an Existing Team</h3> <p>Enter the code shared by a team leader.</p>
-            <div className="input-group">
-              <input type="text" placeholder="Enter team code" value={joinTeamCodeInput} onChange={(e) => setJoinTeamCodeInput(e.target.value.toUpperCase())} disabled={actionLoading} />
-              <button onClick={() => handleJoinTeam()} disabled={actionLoading || !joinTeamCodeInput}>{actionLoading ? 'Processing...' : 'Join Team'}</button>
-            </div>
-          </div>
-          <div className="divider-or">OR</div>
-          <div className="team-action-card">
-            <h3>Create a New Team</h3> <p>Start your own Vexcel squad!</p>
-            <div className="input-group">
-              <input type="text" placeholder="Enter new team name" value={createTeamNameInput} onChange={(e) => setCreateTeamNameInput(e.target.value)} disabled={actionLoading} />
-              <button onClick={handleCreateTeam} disabled={actionLoading || !createTeamNameInput}>{actionLoading ? 'Processing...' : 'Create Team'}</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-  };
-  const BrowseTeamsView = () => { const [searchTerm, setSearchTerm] = useState('');
-    const filteredAndSortedTeams = useMemo(() =>
-        allTeams
-            .filter(team =>
-                team.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                (team.description && team.description.toLowerCase().includes(searchTerm.toLowerCase())) ||
-                team.code.toLowerCase().includes(searchTerm.toLowerCase())
-            )
-            .sort((a,b) => (b.totalXP || 0) - (a.totalXP || 0)), 
-        [allTeams, searchTerm]
-    );
-
-    useEffect(() => {
-        if (currentView === 'browseTeams' && allTeams.length === 0) { 
-            fetchAllTeamsForBrowse();
-        }
-    }, [currentView, allTeams.length, fetchAllTeamsForBrowse]);
-
-
-    return (
-      <div className="browse-teams-view">
-        <div className="view-header"> <Eye className="header-icon" /> <h1>Browse All Teams</h1> <p>Find a team, see who's competing, or get inspired!</p> </div>
-        <div className="search-bar-container"> <Search className="search-icon" /> <input type="text" placeholder="Search by name, description, or code..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="teams-search-input" /> </div>
-        {actionLoading && allTeams.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading teams...</p></div>}
-        {!actionLoading && allTeams.length === 0 && currentView === 'browseTeams' ? ( 
-          <p className="info-message">No teams exist yet. Go to "My Team" to create one!</p>
-        ) : filteredAndSortedTeams.length > 0 ? (
-          <div className="teams-grid">
-            {filteredAndSortedTeams.map(team => (
-              <div key={team.id} className="team-browse-card">
-                <div className="team-card-header"><h3>{team.name}</h3><span className="team-code-badge">CODE: {team.code}</span></div>
-                <p className="team-description">{team.description || "No description available."}</p>
-                <div className="team-card-footer">
-                  <span><Users size={16} /> {(team.memberIds ? team.memberIds.length : team.members) || 0} Members</span> <span><Trophy size={16} /> {(team.totalXP || 0).toLocaleString()} XP</span>
-                  {(!userTeam || userTeam.id !== team.id) && <button onClick={() => handleJoinTeam(team.code)} className="join-team-browse-btn" disabled={actionLoading || !!userTeam}>{!!userTeam ? 'In a Team' : (actionLoading ? 'Processing...' : 'Join Team')}</button>}
-                  {userTeam && userTeam.id === team.id && <span className="current-team-indicator"><Check size={16}/> Your Team</span>}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          !actionLoading && <p className="info-message">No teams match your search criteria.</p>
-        )}
-      </div>
-    );
-  };
-  const LeaderboardView = () => { const sortedLeaderboard = useMemo(() =>
-        [...allTeams].sort((a, b) => (b.totalXP || 0) - (a.totalXP || 0)).map((team, index) => ({ ...team, rank: index + 1 })),
-        [allTeams]
-    );
-
-    useEffect(() => {
-        if (currentView === 'leaderboard' && allTeams.length === 0 && !actionLoading) { 
-            console.log("[LeaderboardView useEffect] Conditions met for fetching teams (view, empty, not loading).");
-            fetchAllTeamsForBrowse();
-        }
-    }, [currentView, allTeams.length, fetchAllTeamsForBrowse, actionLoading]); 
-
-    return (
-      <div className="leaderboard-view">
-        <div className="view-header"> <Trophy className="header-icon" /> <h1>Global Team Leaderboard</h1> <p>See how teams stack up in the Vexcel universe!</p> </div>
-        {actionLoading && sortedLeaderboard.length === 0 && <div className="full-page-loader"><div className="spinner"></div><p>Loading leaderboard...</p></div>}
-        <div className="leaderboard-list">
-          {!actionLoading && sortedLeaderboard.length > 0 ? sortedLeaderboard.map((team) => (
-            <div key={team.id} className={`leaderboard-item ${userTeam && team.id === userTeam.id ? 'current-team' : ''}`}>
-              <span className="rank-badge">#{team.rank}</span>
-              <div className="team-info"><h3>{team.name}</h3> <p>{(team.memberIds ? team.memberIds.length : team.members) || 0} members • Code: {team.code}</p></div>
-              <span className="team-xp">{(team.totalXP || 0).toLocaleString()} XP</span>
-            </div>
-          )) : !actionLoading && <p className="info-message">The leaderboard is currently empty or no teams were found. Create or join a team to get started!</p>}
-        </div>
-      </div>
-    );
-  };
-  const VexpertChallengeView = () => { if (actionLoading && challengeState === 'idle') {
-        return <div className="full-page-loader"><div className="spinner"></div><p>Preparing Challenge...</p></div>;
-    }
-
-    if (challengeState === 'idle') {
-      return (
-        <div className="challenge-view">
-          <div className="view-header">
-            <Puzzle className="header-icon" style={{color: 'var(--color-purple-500)'}} />
-            <h1>VEXpert Knowledge Challenge</h1>
-            <p>Test your VEX robotics knowledge! Answer a series of questions and earn XP.</p>
-          </div>
-          <div className="challenge-idle-content">
-            <img src={`https://source.boringavatars.com/bauhaus/120/${user?.email || 'challenge-ready'}?colors=8B5CF6,A78BFA,EDE9FE,F3E8FF,C084FC`} alt="Challenge Icon" className="challenge-arena-icon"/>
-            <h2>Ready to Test Your Expertise?</h2>
-            <div className="challenge-config">
-              <div className="config-item">
-                <label htmlFor="numQuestionsConfig">Number of Questions:</label>
-                <select
-                  id="numQuestionsConfig"
-                  value={numChallengeQuestionsInput}
-                  onChange={(e) => setNumChallengeQuestionsInput(Number(e.target.value))}
-                  disabled={actionLoading}
-                >
-                  {[3, 5, 7, 10, 15, vexpertChallengeBank.length]
-                    .filter((val, idx, self) => self.indexOf(val) === idx && val <= vexpertChallengeBank.length && val > 0) 
-                    .sort((a,b) => a-b)
-                    .map(num => (
-                      <option key={num} value={num}>
-                        {num === vexpertChallengeBank.length ? `All (${vexpertChallengeBank.length})` : num}
-                      </option>
-                  ))}
-                </select>
-              </div>
-              <div className="config-item">
-                <label>Categories (select at least one):</label>
-                <div className="category-checkboxes">
-                  {availableChallengeCategories.map(category => (
-                    <div key={category} className="category-checkbox-item">
-                      <input
-                        type="checkbox"
-                        id={`cat-config-${category}`}
-                        value={category}
-                        checked={selectedChallengeCategories.includes(category)}
-                        onChange={(e) => {
-                          const cat = e.target.value;
-                          setSelectedChallengeCategories(prev =>
-                            e.target.checked ? [...prev, cat] : prev.filter(c => c !== cat)
-                          );
-                        }}
-                        disabled={actionLoading}
-                      />
-                      <label htmlFor={`cat-config-${category}`}>{category}</label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-            <p>You'll face {numChallengeQuestionsInput} questions from selected categories. Each question is timed. Aim for accuracy and speed!</p>
-            <button
-              className="challenge-action-btn start-challenge-btn"
-              onClick={startVexpertChallenge}
-              disabled={actionLoading || selectedChallengeCategories.length === 0 || numChallengeQuestionsInput <= 0}
-            >
-              {actionLoading ? 'Loading...' : `Start ${numChallengeQuestionsInput}-Question Challenge`}
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    if (challengeState === 'active' && challengeQuestions.length > 0) {
-      const currentQuestion = challengeQuestions[currentChallengeQuestionIdx];
-      return (
-        <div className="challenge-view active-challenge">
-          <div className="challenge-header">
-            <h2>Question {currentChallengeQuestionIdx + 1} / {challengeQuestions.length}</h2>
-            <div className="challenge-timer">
-                <Clock size={18} /> Time Left: <span className={challengeTimer <=5 ? 'timer-critical': ''}>{challengeTimer}s</span>
-            </div>
-            <div className="challenge-score">Score: {challengeScore}</div>
-          </div>
-          <div className="challenge-question-card">
-            <p className="question-category-tag">{currentQuestion.category} - {currentQuestion.difficulty}</p>
-            <h3>{currentQuestion.question}</h3>
-            <div className="challenge-options-list">
-              {currentQuestion.options.map((option, index) => (
-                <button
-                  key={index}
-                  className={`challenge-option-btn
-                    ${challengeSelectedAnswer === index ? 'selected' : ''}
-                    ${showChallengeAnswer && currentQuestion.correctAnswerIndex === index ? 'correct' : ''}
-                    ${showChallengeAnswer && challengeSelectedAnswer === index && currentQuestion.correctAnswerIndex !== index ? 'incorrect' : ''}
-                  `}
-                  onClick={() => handleChallengeAnswer(index)}
-                  disabled={showChallengeAnswer || actionLoading}
-                >
-                  <span className="option-letter">{String.fromCharCode(65 + index)}</span>
-                  {option}
-                </button>
-              ))}
-            </div>
-            {showChallengeAnswer && (
-              <div className="challenge-feedback">
-                {challengeSelectedAnswer === currentQuestion.correctAnswerIndex ?
-                  <p className="feedback-correct"><Check size={20}/> Correct!</p> :
-                  <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)}.</p>
-                }
-                {currentQuestion.explanation && <p className="explanation-text"><em>Explanation:</em> {currentQuestion.explanation}</p>}
-                <button className="challenge-action-btn next-question-btn" onClick={handleNextChallengeQuestion} disabled={actionLoading}>
-                  {currentChallengeQuestionIdx < challengeQuestions.length - 1 ? 'Next Question' : 'Finish Challenge'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    if (challengeState === 'results') {
-      const percentage = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * 100) : 0;
-      const xpAwarded = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
-      return (
-        <div className="challenge-view challenge-results">
-          <div className="view-header">
-            <BarChart2 className="header-icon" style={{color: 'var(--color-green-500)'}} />
-            <h1>Challenge Results</h1>
-          </div>
-          <div className="results-summary">
-            <p>You answered {challengeScore} out of {challengeQuestions.length} questions correctly ({percentage}%).</p>
-            <p className="xp-earned-challenge">You've earned {xpAwarded} XP!</p>
-          </div>
-          <div className="challenge-ended-options">
-            <button className="challenge-action-btn play-again-btn" onClick={resetChallenge} disabled={actionLoading}>Configure New Challenge</button>
-            <button className="challenge-action-btn back-dashboard-btn" onClick={() => navigate('dashboard')} disabled={actionLoading}>Back to Dashboard</button>
-          </div>
-        </div>
-      );
-    }
-    return <div className="challenge-view"><p>Loading challenge state...</p></div>;
-  };
-  const LoginView = () => { return (
-    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
-      <div className="login-container">
-        <div className="login-card">
-          <div className="login-header">
-            <Target className="brand-icon-large" style={{color: '#667eea'}}/>
-            <h1>Vexcel</h1>
-            <p>Your Ultimate VEX V5 Learning & Competition Platform</p>
-          </div>
-          {actionLoading && currentView === 'login' && (
-            <div className="loading-section login-specific-loader">
-              <div className="spinner"></div>
-              <p>Processing Sign-In...</p>
-            </div>
-          )}
-          {message && !user && currentView === 'login' && ( 
-            <div className={`message login-message ${message.includes('failed') || message.includes('Error') || message.includes('Invalid') ? 'error' : (message.includes('Logout') || message.includes('logged out') ? 'info' : 'success')}`}>
-              {message}
-            </div>
-          )}
-          {!actionLoading && !user && (
-            <div className="login-section">
-              <GoogleLogin
-                onSuccess={handleLoginSuccess}
-                onError={handleLoginError}
-                useOneTap={true} 
-                auto_select={false} 
-                theme="outline"
-                size="large"
-                text="signin_with" 
-                shape="rectangular" 
-                width="300px" 
-              />
-            </div>
-          )}
-          <div className="features-preview">
-            <div className="feature"><BookOpen className="feature-icon" /><span>Interactive Modules</span></div>
-            <div className="feature"><Users className="feature-icon" /><span>Team Collaboration</span></div>
-            <div className="feature"><Trophy className="feature-icon" /><span>Leaderboards</span></div>
-            <div className="feature"><Puzzle className="feature-icon" /><span>Knowledge Challenges</span></div>
-          </div>
-          <p className="login-footer">© {new Date().getFullYear()} Vexcel Platform. Empowering VEX enthusiasts.</p>
-        </div>
-      </div>
-    </GoogleOAuthProvider>
-  );
-  };
 
   if (loading) {
     const loadingMessageText = message || (user ? "Loading Vexcel Dashboard..." : "Initializing Vexcel Platform...");
@@ -1449,10 +1855,24 @@ const App = () => {
   return (
     <>
       {!user ? (
-        <LoginView />
+        <LoginView
+          googleClientId={GOOGLE_CLIENT_ID}
+          actionLoading={actionLoading}
+          currentView={currentView}
+          message={message}
+          user={user}
+          onLoginSuccess={handleLoginSuccess}
+          onLoginError={handleLoginError}
+        />
       ) : (
         <div className="app">
-          <Navigation />
+          <Navigation
+            user={user}
+            currentView={currentView}
+            navigate={navigate}
+            handleLogout={handleLogout}
+            actionLoading={actionLoading}
+          />
           <main className="main-content">
             {message && (currentView !== 'login' || user) && 
                 <div className={`message app-message ${message.includes('failed')||message.includes('Error')||message.includes('Invalid')?'error':(message.includes('Level Up')||message.includes('Completed')||message.includes('🎉')||message.includes('Challenge finished')||message.includes('Successfully')||message.includes('created') ?'success':'info')}`}>{message}</div>
@@ -1461,26 +1881,29 @@ const App = () => {
                  <div className="loading-section page-loader"><div className="spinner" /> <p>Processing...</p></div>
             )}
 
-            {currentView === 'dashboard' && <Dashboard />}
-            {currentView === 'module' && selectedModule && <ModuleView />}
-            {currentView === 'lessonContent' && currentLesson && selectedModule && <LessonContentView />}
-            {currentView === 'quiz' && quizData && <QuizView />}
-            {currentView === 'game' && gameData && <GameView />}
-            {currentView === 'teams' && <TeamsView />}
-            {currentView === 'browseTeams' && <BrowseTeamsView />}
-            {currentView === 'leaderboard' && <LeaderboardView />}
-            {currentView === 'challenge' && <VexpertChallengeView />}
+            {currentView === 'dashboard' && <Dashboard user={user} userProgress={userProgress} userTeam={userTeam} learningModules={learningModules} navigate={navigate} actionLoading={actionLoading} />}
+            {currentView === 'module' && selectedModule && <ModuleView selectedModule={selectedModule} userProgress={userProgress} navigate={navigate} actionLoading={actionLoading} />}
+            {currentView === 'lessonContent' && currentLesson && selectedModule && <LessonContentView currentLesson={currentLesson} selectedModule={selectedModule} userProgress={userProgress} handleCompleteItem={handleCompleteItem} navigate={navigate} actionLoading={actionLoading} />}
+            {currentView === 'quiz' && quizData && <QuizView quizData={quizData} sampleQuizzes={sampleQuizzes} userProgress={userProgress} selectedModule={selectedModule} handleCompleteItem={handleCompleteItem} navigate={navigate} actionLoading={actionLoading} setMessage={setMessage} />}
+            {currentView === 'game' && gameData && <GameView gameData={gameData} sampleGames={sampleGames} userProgress={userProgress} selectedModule={selectedModule} handleCompleteItem={handleCompleteItem} navigate={navigate} actionLoading={actionLoading} setMessage={setMessage} />}
+            {currentView === 'teams' && <TeamsView user={user} userTeam={userTeam} actionLoading={actionLoading} joinTeamCodeInput={joinTeamCodeInput} setJoinTeamCodeInput={setJoinTeamCodeInput} createTeamNameInput={createTeamNameInput} setCreateTeamNameInput={setCreateTeamNameInput} onJoinTeam={handleJoinTeam} onCreateTeam={handleCreateTeam} onLeaveTeam={handleLeaveTeam} onDeleteTeam={handleDeleteTeam} />}
+            {currentView === 'browseTeams' && <BrowseTeamsView allTeams={allTeams} actionLoading={actionLoading} user={user} currentView={currentView} fetchAllTeams={fetchAllTeamsForBrowse} userTeam={userTeam} onJoinTeam={handleJoinTeam} />}
+            {currentView === 'leaderboard' && <LeaderboardView allTeams={allTeams} actionLoading={actionLoading} user={user} currentView={currentView} fetchAllTeams={fetchAllTeamsForBrowse} userTeam={userTeam} />}
+            {currentView === 'challenge' && <VexpertChallengeView user={user} actionLoading={actionLoading} challengeState={challengeState} vexpertChallengeBank={vexpertChallengeBank} selectedChallengeCategories={selectedChallengeCategories} setSelectedChallengeCategories={setSelectedChallengeCategories} availableChallengeCategories={availableChallengeCategories} numChallengeQuestionsInput={numChallengeQuestionsInput} setNumChallengeQuestionsInput={setNumChallengeQuestionsInput} onStartChallenge={startVexpertChallenge} challengeQuestions={challengeQuestions} currentChallengeQuestionIdx={currentChallengeQuestionIdx} challengeTimer={challengeTimer} showChallengeAnswer={showChallengeAnswer} challengeScore={challengeScore} onChallengeAnswer={handleChallengeAnswer} onNextChallengeQuestion={handleNextChallengeQuestion} onResetChallenge={resetChallenge} questionTimerDuration={QUESTION_TIMER_DURATION} navigate={navigate} />}
           </main>
         </div>
       )}
 
+      {/* Global Styles */}
       <style jsx global>{`
         :root {
             --color-blue-500: #3b82f6; --color-blue-600: #2563eb; --color-blue-100: #dbeafe; --color-blue-50: #eff6ff;
             --color-green-500: #10b981; --color-green-600: #059669; --color-green-100: #d1fae5; --color-green-50: #f0fdfa;
-            --color-purple-500: #8b5cf6; --color-purple-600: #7c3aed; --color-purple-100: #ede9fe; --color-purple-300: #c4b5fd;
+            --color-green-500: #8b5cf6; --color-green-600: #7c3aed; --color-green-100: #ede9fe; --color-green-300: #c4b5fd;
             --color-orange-500: #f59e0b; --color-orange-600: #d97706; --color-orange-100: #fff7ed;
-            --color-red-500: #ef4444; --color-red-600: #dc2626; --color-red-100: #fee2e2;
+            --color-red-500: #ef4444; --color-red-600: #dc2626; --color-red-100: #fee2e2; --color-red-50: #fff1f2;
+            --color-pink-500: #ec4899; --color-pink-600: #db2777; --color-pink-100: #fce7f3;
+            
             --text-primary: #1f2937; --text-secondary: #4b5563; --text-light: #6b7280;
             --bg-main: #f3f4f6; --bg-card: white; --border-color: #e5e7eb;
             --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
@@ -1562,7 +1985,7 @@ const App = () => {
         .stat-card .stat-icon { color: var(--color-blue-500); }
         .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; }
         .stat-card .stat-label { font-size: 0.9rem; color: var(--text-light); }
-        .team-card { background: linear-gradient(135deg, var(--color-blue-500) 0%, var(--color-purple-500) 100%); color:white; padding: 2rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-lg); }
+        .team-card { background: linear-gradient(135deg, var(--color-blue-500) 0%, var(--color-green-500) 100%); color:white; padding: 2rem; border-radius: 12px; display: flex; justify-content: space-between; align-items: center; box-shadow: var(--shadow-lg); }
         .team-card .team-info {display:flex; align-items:center; gap:1rem;}
         .team-card .team-icon { width:2.5rem; height:2.5rem; color:white;}
         .team-card h3 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
@@ -1585,9 +2008,10 @@ const App = () => {
         .module-card .module-icon { width: 2.5rem; height: 2.5rem; }
         .module-card.blue .module-icon { color: var(--color-blue-500); } .module-card.blue .progress-fill { background: var(--color-blue-500); }
         .module-card.green .module-icon { color: var(--color-green-500); } .module-card.green .progress-fill { background: var(--color-green-500); }
-        .module-card.purple .module-icon { color: var(--color-purple-500); } .module-card.purple .progress-fill { background: var(--color-purple-500); }
+        .module-card.green .module-icon { color: var(--color-green-500); } .module-card.green .progress-fill { background: var(--color-green-500); }
         .module-card.orange .module-icon { color: var(--color-orange-500); } .module-card.orange .progress-fill { background: var(--color-orange-500); }
         .module-card.red .module-icon { color: var(--color-red-500); } .module-card.red .progress-fill { background: var(--color-red-500); }
+        .module-card.pink .module-icon { color: var(--color-pink-500); } .module-card.pink .progress-fill { background: var(--color-pink-500); }
         .module-card .module-meta { display: flex; gap: 0.75rem; }
         .module-card .difficulty, .module-card .duration { font-size: 0.8rem; padding: 0.3rem 0.6rem; border-radius: 16px; background: #e9ecef; color: var(--text-secondary); }
         .module-card h3 { font-size: 1.35rem; font-weight: 600; margin-bottom: 0.5rem; }
@@ -1601,7 +2025,7 @@ const App = () => {
 
         .module-view-header { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-md); margin-bottom:2rem;}
         .module-title-section { display: flex; align-items: flex-start; gap: 2rem; }
-        .category-tag-module { display: inline-block; background-color: var(--color-purple-100); color: var(--color-purple-600); padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; }
+        .category-tag-module { display: inline-block; background-color: var(--color-green-100); color: var(--color-green-600); padding: 0.25rem 0.75rem; border-radius: 12px; font-size: 0.8rem; font-weight: 500; margin-bottom: 0.5rem; }
         .module-icon-large { width: 4rem; height: 4rem; flex-shrink: 0; }
         .module-title-section h1 { font-size: 2rem; font-weight: 700; margin-bottom: 0.5rem; }
         .module-title-section p { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 1rem; }
@@ -1683,16 +2107,20 @@ const App = () => {
         .game-placeholder { min-height: 200px; background: #e9ecef; border-radius: 8px; display:flex; align-items:center; justify-content:center; color: var(--text-light); font-style:italic; margin-bottom:2rem;}
         .complete-game-btn { padding: 1rem 2.5rem; background: var(--color-green-500); color: white; border-radius: 8px; font-size: 1.05rem; font-weight: 600; }
         .complete-game-btn:hover { background: var(--color-green-600); }
-        
+
         .teams-view .current-team-card { background: var(--bg-card); padding: 2.5rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
-        .current-team-card .team-card-main { display:flex; align-items:flex-start; gap:2rem; margin-bottom:2rem;}
+        .current-team-card .team-card-main { display:flex; align-items:flex-start; gap:2rem; margin-bottom:1.5rem;}
         .team-avatar-icon { width:4rem; height:4rem; flex-shrink:0; }
         .current-team-card h2 { font-size:1.8rem; font-weight:700; margin-bottom:0.5rem;}
         .team-description-small { font-size:1rem; color: var(--text-secondary); margin-bottom:0.75rem;}
         .current-team-card p {font-size:1rem; color:var(--text-secondary); margin-bottom:0.3rem;}
         .team-code-display { background: var(--color-blue-100); color: var(--color-blue-600); padding:0.3rem 0.6rem; border-radius:4px; font-weight:bold;}
-        .leave-team-btn { padding: 0.8rem 1.5rem; background: var(--color-red-100); color: var(--color-red-600); border:1px solid var(--color-red-500); border-radius: 8px; font-weight: 600; }
-        .leave-team-btn:hover { background: var(--color-red-500); color:white; }
+        .team-management-actions { display: flex; gap: 1rem; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
+        .leave-team-btn { padding: 0.8rem 1.5rem; background: var(--color-orange-100); color: var(--color-orange-600); border:1px solid var(--color-orange-500); border-radius: 8px; font-weight: 600; }
+        .leave-team-btn:hover { background: var(--color-orange-500); color:white; }
+        .delete-team-btn { padding: 0.8rem 1.5rem; background: var(--color-red-100); color: var(--color-red-600); border:1px solid var(--color-red-500); border-radius: 8px; font-weight: 600; display:inline-flex; align-items:center; gap:0.5rem;}
+        .delete-team-btn:hover { background: var(--color-red-500); color:white; }
+
         .no-team-actions { display:grid; grid-template-columns:1fr; gap:2.5rem; max-width:700px; margin:0 auto;}
         .team-action-card { background:var(--bg-card); padding:2rem; border-radius:10px; box-shadow:var(--shadow-md); text-align:center;}
         .team-action-card h3 {font-size:1.4rem; font-weight:600; margin-bottom:0.5rem;}
@@ -1704,7 +2132,7 @@ const App = () => {
         .divider-or {text-align:center; font-weight:500; color:var(--text-light); position:relative;}
         .divider-or::before, .divider-or::after {content:''; display:block; width:40%; height:1px; background:var(--border-color); position:absolute; top:50%;}
         .divider-or::before {left:0;} .divider-or::after {right:0;}
-        
+
         .browse-teams-view .search-bar-container { display: flex; align-items: center; margin-bottom: 2.5rem; background: var(--bg-card); padding: 0.6rem 1.2rem; border-radius: 8px; box-shadow: var(--shadow-md); }
         .browse-teams-view .search-icon { color: #9ca3af; margin-right: 0.8rem; width:1.25rem; height:1.25rem;}
         .browse-teams-view .teams-search-input { flex-grow: 1; border: none; padding: 0.8rem 0.5rem; font-size: 1.05rem; outline: none; background:transparent; }
@@ -1713,7 +2141,7 @@ const App = () => {
         .team-browse-card:hover {transform:translateY(-4px); box-shadow:var(--shadow-lg);}
         .team-browse-card .team-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:0.75rem;}
         .team-browse-card h3 { font-size: 1.3rem; color: var(--color-blue-600); margin-bottom:0.25rem; font-weight:600;}
-        .team-browse-card .team-code-badge { font-size:0.8rem; background-color:var(--color-purple-100); color:var(--color-purple-600); padding:0.3rem 0.7rem; border-radius:12px; font-weight:500;}
+        .team-browse-card .team-code-badge { font-size:0.8rem; background-color:var(--color-green-100); color:var(--color-green-600); padding:0.3rem 0.7rem; border-radius:12px; font-weight:500;}
         .team-browse-card .team-description { color: var(--text-secondary); font-size:0.95rem; line-height:1.5; margin-bottom:1.5rem; flex-grow:1;}
         .team-browse-card .team-card-footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--border-color); padding-top:1.25rem; font-size:0.9rem; color:var(--text-light);}
         .team-browse-card .team-card-footer span { display:flex; align-items:center; gap:0.4rem;}
@@ -1721,7 +2149,7 @@ const App = () => {
         .join-team-browse-btn:hover:not(:disabled) { background-color: var(--color-blue-600);}
         .join-team-browse-btn:disabled { background-color: #bdc3c7; }
         .current-team-indicator { color: var(--color-green-600); font-weight:600; display:flex; align-items:center; gap:0.3rem;}
-        
+
         .leaderboard-view .leaderboard-list { background: var(--bg-card); border-radius:10px; box-shadow: var(--shadow-lg); overflow:hidden;}
         .leaderboard-item { display:flex; align-items:center; padding: 1.25rem 1.75rem; border-bottom: 1px solid var(--border-color); transition: background-color 0.2s;}
         .leaderboard-item:last-child {border-bottom:none;}
@@ -1731,7 +2159,7 @@ const App = () => {
         .leaderboard-item .team-info { flex-grow:1; }
         .leaderboard-item .team-info h3 {font-size:1.2rem; color:var(--color-blue-600); margin-bottom:0.1rem; font-weight:600;}
         .leaderboard-item .team-info p {font-size:0.9rem; color:var(--text-light);}
-        .leaderboard-item .team-xp {font-size:1.2rem; font-weight:700; color:var(--color-purple-500); margin-left:auto; text-align:right;}
+        .leaderboard-item .team-xp {font-size:1.2rem; font-weight:700; color:var(--color-green-500); margin-left:auto; text-align:right;}
 
         .challenge-view { background: var(--bg-card); padding: 2rem; border-radius: 12px; box-shadow: var(--shadow-lg); }
         .challenge-idle-content { text-align:center; padding: 2rem 0;}
@@ -1739,8 +2167,8 @@ const App = () => {
         .challenge-idle-content h2 { font-size: 1.8rem; color: var(--text-primary); margin-bottom: 0.75rem; }
         .challenge-idle-content p { font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 2rem; }
         .challenge-action-btn { padding: 0.8rem 1.5rem; border-radius:8px; font-size:1rem; font-weight:500; display:inline-flex; align-items:center; justify-content:center; gap:0.6rem; border:1px solid transparent; line-height: 1.2;}
-        .start-challenge-btn { background-color: var(--color-purple-500); color:white; padding: 1rem 2.5rem; font-size:1.1rem; font-weight:600;}
-        .start-challenge-btn:hover:not(:disabled) { background-color: var(--color-purple-600); }
+        .start-challenge-btn { background-color: var(--color-green-500); color:white; padding: 1rem 2.5rem; font-size:1.1rem; font-weight:600;}
+        .start-challenge-btn:hover:not(:disabled) { background-color: var(--color-blue-600); }
 
         .active-challenge .challenge-header { display: flex; justify-content: space-between; align-items: center; margin-bottom:1.5rem; padding-bottom:1rem; border-bottom:1px solid var(--border-color); }
         .active-challenge .challenge-header h2 { font-size:1.4rem; font-weight:600; color:var(--text-primary); }
@@ -1753,12 +2181,12 @@ const App = () => {
         .challenge-question-card h3 { font-size: 1.4rem; font-weight: 600; margin-bottom: 1.5rem; line-height: 1.4; color:var(--text-primary); }
         .challenge-options-list { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 1.5rem; }
         .challenge-option-btn { display: flex; align-items: center; gap: 1rem; padding: 1rem; background: white; border: 2px solid var(--border-color); border-radius: 8px; text-align: left; width:100%; font-size:1rem;}
-        .challenge-option-btn:hover:not(:disabled) { border-color: var(--color-purple-100); background: var(--color-purple-50); }
-        .challenge-option-btn.selected:not(.correct):not(.incorrect) { border-color: var(--color-purple-500); background: var(--color-purple-100); font-weight:500;}
+        .challenge-option-btn:hover:not(:disabled) { border-color: var(--color-blue-100); background: var(--color-blue-50); }
+        .challenge-option-btn.selected:not(.correct):not(.incorrect) { border-color: var(--color-blue-500); background: var(--color-blue-100); font-weight:500;}
         .challenge-option-btn.correct { background-color: var(--color-green-100); border-color: var(--color-green-500); color: var(--color-green-600); font-weight: bold; }
         .challenge-option-btn.incorrect { background-color: var(--color-red-100); border-color: var(--color-red-500); color: var(--color-red-600); }
-        .challenge-option-btn .option-letter { background: #e9ecef; } 
-        .challenge-option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-purple-500); color: white; }
+        .challenge-option-btn .option-letter { background: #e9ecef; }
+        .challenge-option-btn.selected:not(.correct):not(.incorrect) .option-letter { background: var(--color-blue-500); color: white; }
         .challenge-option-btn.correct .option-letter { background: var(--color-green-500); color: white; }
         .challenge-option-btn.incorrect .option-letter { background: var(--color-red-500); color: white; }
 
@@ -1810,15 +2238,15 @@ const App = () => {
         }
         .config-item select:focus,
         .config-item input[type="number"]:focus {
-            border-color: var(--color-purple-500);
-            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25); 
+            border-color: var(--color-green-500);
+            box-shadow: 0 0 0 0.2rem rgba(139, 92, 246, 0.25);
             outline: none;
         }
         .category-checkboxes {
           display: flex;
           flex-wrap: wrap;
           gap: 0.8rem;
-          justify-content: flex-start; 
+          justify-content: flex-start;
         }
         .category-checkbox-item {
           display: flex;
@@ -1833,17 +2261,17 @@ const App = () => {
           transition: border-color 0.2s;
         }
         .category-checkbox-item:hover {
-            border-color: var(--color-purple-300);
+            border-color: var(--color-green-300);
         }
         .category-checkbox-item input[type="checkbox"] {
           width: 1rem;
           height: 1rem;
-          accent-color: var(--color-purple-500); 
+          accent-color: var(--color-green-500);
           cursor: pointer;
         }
         .category-checkbox-item label {
             cursor: pointer;
-            font-weight: normal; 
+            font-weight: normal;
             color: var(--text-secondary);
         }
 
@@ -1873,6 +2301,8 @@ const App = () => {
             .divider-or::before, .divider-or::after {width:35%;}
             .active-challenge .challenge-header { flex-direction:column; gap:0.75rem; align-items:flex-start;}
             .challenge-config { max-width: 100%; }
+            .team-management-actions { flex-direction: column; gap: 0.75rem; }
+            .team-management-actions .leave-team-btn, .team-management-actions .delete-team-btn { width: 100%; }
         }
         @media (max-width: 480px) {
             .login-card {padding: 2rem 1.5rem;}
@@ -1892,7 +2322,7 @@ const App = () => {
             .current-team-card .team-card-main {flex-direction:column; align-items:center; text-align:center; gap:1rem;}
             .team-avatar-icon {margin-bottom:0.5rem;}
             .challenge-question-card h3 { font-size:1.2rem; }
-            .category-checkboxes { justify-content: center; } 
+            .category-checkboxes { justify-content: center; }
         }
       `}</style>
     </>
