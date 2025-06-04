@@ -11,11 +11,11 @@ console.log("[Firebase.js] Script start. Attempting to initialize Firebase...");
 // Project Settings > General > Your apps > Web app > SDK setup and configuration > Config
 // =================================================================================
 const firebaseConfig = {
-  apiKey: "AIzaSyDziIoedENZQ2xuKl2h66nzZmjdqmQkSU8", 
-  authDomain: "vexcel-ad5a9.firebaseapp.com", 
-  projectId: "vexcel-ad5a9", 
-  storageBucket: "vexcel-ad5a9.firebasestorage.app", 
-  messagingSenderId: "664588170188", 
+  apiKey: "AIzaSyB8E9MdCQWiw-R8-67zc2CQRZMHa8gRLb8", 
+  authDomain: "sciolytics-38022.firebaseapp.com", 
+  projectId: "sciolytics-38022", 
+  storageBucket: "sciolytics-38022.firebasestorage.app", 
+  messagingSenderId: "1:114611845198:web:221fa7321b5d0765676b1f", 
   appId: "1:664588170188:web:031267962d99b2015e6369" 
   // measurementId: "YOUR_MEASUREMENT_ID" 
 };
