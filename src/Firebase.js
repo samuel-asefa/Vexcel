@@ -4,12 +4,6 @@ import { getFirestore } from 'firebase/firestore';
 
 console.log("[Firebase.js] Script start. Attempting to initialize Firebase...");
 
-// =================================================================================
-// CRITICAL STEP: REPLACE THE VALUES BELOW WITH YOUR *ACTUAL*
-// FIREBASE PROJECT CONFIGURATION VALUES.
-// Find them in your Firebase Console:
-// Project Settings > General > Your apps > Web app > SDK setup and configuration > Config
-// =================================================================================
 const firebaseConfig = {
   apiKey: "AIzaSyB8E9MdCQWiw-R8-67zc2CQRZMHa8gRLb8", 
   authDomain: "sciolytics-38022.firebaseapp.com", 
@@ -17,14 +11,12 @@ const firebaseConfig = {
   storageBucket: "sciolytics-38022.firebasestorage.app", 
   messagingSenderId: "1:114611845198:web:221fa7321b5d0765676b1f", 
   appId: "1:664588170188:web:031267962d99b2015e6369" 
-  // measurementId: "YOUR_MEASUREMENT_ID" 
 };
 
 console.log("[Firebase.js] USING firebaseConfig:", JSON.stringify(firebaseConfig, (key, value) => {
   if (key === 'apiKey') return 'REDACTED_FOR_LOG'; 
   return value;
 }, 2));
-
 
 let app;
 let authInstance = null;
