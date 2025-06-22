@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
-import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2, Layers, Crosshair, Truck, Wrench, University, SquarePen, Terminal, Bot, CircuitBoard, Radar, Trash2 } from 'lucide-react';
+import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2, Layers, Crosshair, Truck, Wrench, University, SquarePen, Terminal, Bot, CircuitBoard, Radar, Trash2, Sun, Moon } from 'lucide-react';
 
 import { auth, db } from './Firebase'; // Assuming Firebase.js is correctly configured
 import { GoogleAuthProvider as FirebaseGoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
@@ -23,9 +23,29 @@ const slugify = (text) => text.toString().toLowerCase().trim()
 
 // Helper function to generate placeholder contentDetail
 const generateContentDetail = (title, customText = "") => {
-  const placeholderText = customText || `Comprehensive guide on ${title}. Learn about its principles, applications in VEX robotics, and best practices. Detailed examples and diagrams will be provided.`;
-  return `<h1>${title}</h1><p>${placeholderText}</p><img src='https://placehold.co/600x350/EBF0F5/8FA4B8?text=${encodeURIComponent(title)}' alt='${title}' style='width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;'>`;
+    const placeholderText = customText || `Comprehensive guide on ${title}. Learn about its principles, applications in VEX robotics, and best practices. Detailed examples and diagrams will be provided.`;
+    
+    // Example of using an image from the public/images directory
+    const imagePath = `/images/lessons/${slugify(title)}.png`;
+
+    return `
+        <h1>${title}</h1>
+        <p>${placeholderText}</p>
+        <img src='${imagePath}' 
+             alt='${title}' 
+             style='width:100%;max-width:450px;border-radius:8px;margin:1.5rem auto;display:block;border:1px solid #ccc;'
+             onError="(e) => { e.target.onerror = null; e.target.src='https://placehold.co/600x350/EBF0F5/8FA4B8?text=${encodeURIComponent(title)}' }"
+        />
+        <h2>Key Concepts</h2>
+        <ul>
+            <li>Concept A: Detailed explanation.</li>
+            <li>Concept B: Another detailed point.</li>
+            <li>Concept C: Further elaboration.</li>
+        </ul>
+        <p>This structure allows for rich content including headings, paragraphs, images, and lists.</p>
+    `;
 };
+
 
 const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || '664588170188-e2mvb0g24k22ghdfv6534kp3808rk70q.apps.googleusercontent.com';
 const XP_PER_LEVEL = 500;
@@ -91,28 +111,31 @@ const LoginView = ({
   </GoogleOAuthProvider>
 );
 
-const Navigation = ({ user, currentView, navigate, handleLogout, actionLoading }) => (
-  <nav className="nav">
-    <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
-      <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
-      <span className="brand-text">Vexcel</span>
-    </div>
-    {user && (
-      <div className="nav-items">
-        <button className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}><Home className="icon" />Dashboard</button>
-        <button className={`nav-item ${currentView === 'teams' ? 'active' : ''}`} onClick={() => navigate('teams')}><Users className="icon" />My Team</button>
-        <button className={`nav-item ${currentView === 'browseTeams' ? 'active' : ''}`} onClick={() => navigate('browseTeams')}><Search className="icon" />Browse Teams</button>
-        <button className={`nav-item ${currentView === 'leaderboard' ? 'active' : ''}`} onClick={() => navigate('leaderboard')}><Trophy className="icon" />Leaderboard</button>
-        <button className={`nav-item ${currentView === 'challenge' ? 'active' : ''}`} onClick={() => navigate('challenge')}><Puzzle className="icon" />Challenge</button>
-        <div className="nav-user">
-          <img src={user.avatar} alt={user.name} className="user-avatar" onError={(e)=>e.target.src='https://source.boringavatars.com/beam/120/default?colors=264653,2a9d8f,e9c46a,f4a261,e76f51'}/>
-          <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">  Lvl {user.level} ({user.xp || 0} XP)</span></div>
-          <button onClick={handleLogout} className="logout-btn" title="Logout" disabled={actionLoading}><LogOut size={18}/></button>
-        </div>
+const Navigation = ({ user, currentView, navigate, handleLogout, actionLoading, theme, toggleTheme }) => (
+    <nav className="nav">
+      <div className="nav-brand" onClick={() => user && navigate('dashboard')} style={{cursor: user ? 'pointer' : 'default'}}>
+        <img src="/brand-logo.png" alt="Vexcel Logo" className="brand-logo-image" onError={(e) => { e.target.style.display='none'; e.target.nextSibling.style.marginLeft='0'; }}/>
+        <span className="brand-text">Vexcel</span>
       </div>
-    )}
-  </nav>
-);
+      {user && (
+        <div className="nav-items">
+          <button className={`nav-item ${currentView === 'dashboard' ? 'active' : ''}`} onClick={() => navigate('dashboard')}><Home className="icon" />Dashboard</button>
+          <button className={`nav-item ${currentView === 'teams' ? 'active' : ''}`} onClick={() => navigate('teams')}><Users className="icon" />My Team</button>
+          <button className={`nav-item ${currentView === 'browseTeams' ? 'active' : ''}`} onClick={() => navigate('browseTeams')}><Search className="icon" />Browse Teams</button>
+          <button className={`nav-item ${currentView === 'leaderboard' ? 'active' : ''}`} onClick={() => navigate('leaderboard')}><Trophy className="icon" />Leaderboard</button>
+          <button className={`nav-item ${currentView === 'challenge' ? 'active' : ''}`} onClick={() => navigate('challenge')}><Puzzle className="icon" />Challenge</button>
+          <div className="nav-user">
+            <img src={user.avatar} alt={user.name} className="user-avatar" onError={(e)=>e.target.src='https://source.boringavatars.com/beam/120/default?colors=264653,2a9d8f,e9c46a,f4a261,e76f51'}/>
+            <div className="user-info"><span className="user-name">{user.name}</span><span className="user-level">  Lvl {user.level} ({user.xp || 0} XP)</span></div>
+            <button onClick={toggleTheme} className="theme-toggle-btn" title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+              {theme === 'light' ? <Moon size={18} /> : <Sun size={18} />}
+            </button>
+            <button onClick={handleLogout} className="logout-btn" title="Logout" disabled={actionLoading}><LogOut size={18}/></button>
+          </div>
+        </div>
+      )}
+    </nav>
+  );
 
 const Dashboard = ({ user, userProgress, userTeam, learningModules, navigate, actionLoading }) => {
   if (!user) return null;
@@ -721,6 +744,13 @@ const App = () => {
   const [challengeSelectedAnswer, setChallengeSelectedAnswer] = useState(null); // This is for App state
   const [showChallengeAnswer, setShowChallengeAnswer] = useState(false);
   const [challengeTimer, setChallengeTimer] = useState(QUESTION_TIMER_DURATION);
+  const [theme, setTheme] = useState('light');
+
+  const toggleTheme = () => {
+    const newTheme = theme === 'light' ? 'dark' : 'light';
+    setTheme(newTheme);
+    document.documentElement.setAttribute('data-theme', newTheme);
+  };
 
 
   const [numChallengeQuestionsInput, setNumChallengeQuestionsInput] = useState(QUESTIONS_PER_CHALLENGE);
@@ -1599,7 +1629,7 @@ const App = () => {
         console.error("App.js: Error deleting team:", error);
         setMessage("Failed to delete team. " + error.message);
     } finally {
-        setActionLoading(false);
+      setActionLoading(false);
     }
   };
 
@@ -1763,6 +1793,8 @@ const App = () => {
             navigate={navigate}
             handleLogout={handleLogout}
             actionLoading={actionLoading}
+            theme={theme}
+            toggleTheme={toggleTheme}
           />
           <main className="main-content">
             {message && (currentView !== 'login' || user) && 
@@ -1801,6 +1833,12 @@ const App = () => {
             --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
             --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
         }
+        
+        [data-theme='dark'] {
+            --text-primary: #f9fafb; --text-secondary: #d1d5db; --text-light: #9ca3af;
+            --bg-main: #111827; --bg-card: #1f2937; --border-color: #374151;
+        }
+
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html { scroll-behavior: smooth; }
         body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif; background-color: var(--bg-main); color: var(--text-primary); line-height: 1.6; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
@@ -1809,9 +1847,9 @@ const App = () => {
 
         button { font-family: inherit; cursor: pointer; border:none; background:none; transition: all 0.2s ease-in-out;}
         button:disabled { cursor: not-allowed; opacity: 0.7; }
-        input[type="text"], input[type="password"], input[type="email"], select { font-family: inherit; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s;}
+        input[type="text"], input[type="password"], input[type="email"], select { font-family: inherit; padding: 0.75rem 1rem; border: 1px solid var(--border-color); border-radius: 6px; font-size: 1rem; transition: border-color 0.2s, box-shadow 0.2s; background-color: var(--bg-card); color: var(--text-primary); }
         input[type="text"]:focus, input[type="password"]:focus, input[type="email"]:focus, select:focus { outline: none; border-color: var(--color-blue-500); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
-        code { background-color: #f3f4f6; padding: 0.2em 0.4em; margin: 0 0.1em; font-size: 85%; border-radius: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; }
+        code { background-color: rgba(128, 128, 128, 0.2); padding: 0.2em 0.4em; margin: 0 0.1em; font-size: 85%; border-radius: 3px; font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace; }
         .icon { width: 1.25rem; height: 1.25rem; } .icon-small { width: 1rem; height: 1rem; } .icon.rotated { transform: rotate(180deg); }
         .error-message { color: var(--color-red-600); background-color: var(--color-red-100); padding: 1rem; border-radius: 8px; text-align: center; margin: 1rem; border: 1px solid var(--color-red-500); }
         .info-message { color: var(--text-secondary); text-align: center; padding: 1rem; font-style: italic;}
@@ -1854,8 +1892,9 @@ const App = () => {
         .user-avatar { width: 2.5rem; height: 2.5rem; border-radius: 50%; object-fit: cover; border: 2px solid var(--border-color);}
         .user-info .user-name { font-weight: 600; font-size: 0.9rem; }
         .user-info .user-level { font-size: 0.8rem; color: var(--text-light); }
-        .logout-btn { background: var(--color-blue-50); color: var(--color-blue-600); padding: 0.6rem; border-radius: 50%; line-height:0;}
+        .logout-btn, .theme-toggle-btn { background: var(--bg-card); color: var(--text-secondary); padding: 0.6rem; border-radius: 50%; line-height:0; border: 1px solid var(--border-color);}
         .logout-btn:hover { background: var(--color-red-100); color: var(--color-red-600); }
+        .theme-toggle-btn:hover { background-color: var(--color-blue-50); }
 
         .main-content { flex: 1; padding: 2.5rem; max-width: 1320px; margin: 0 auto; width: 100%; }
         .view-header { text-align: center; margin-bottom: 2.5rem; padding-bottom:1.5rem; border-bottom: 1px solid var(--border-color);}
