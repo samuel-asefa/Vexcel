@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { GoogleOAuthProvider, GoogleLogin, googleLogout } from '@react-oauth/google';
 import { Play, Users, Trophy, BookOpen, Code, Zap, Target, Award, ChevronRight, X, Check, RotateCcw, Home, LogOut, Search, Eye, MessageSquare, Brain, Settings2, Puzzle, HelpCircle, Clock, BarChart2, Layers, Crosshair, Truck, Wrench, University, SquarePen, Terminal, Bot, CircuitBoard, Radar, Trash2, Sun, Moon } from 'lucide-react';
 
-import { auth, db } from './Firebase'; // Assuming Firebase.js is correctly configured
+import { auth, db } from './Firebase';
 import { GoogleAuthProvider as FirebaseGoogleAuthProvider, signInWithCredential, onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
   doc, getDoc, setDoc, updateDoc, writeBatch,
@@ -10,22 +10,16 @@ import {
   increment, arrayUnion, arrayRemove, orderBy, limit, deleteDoc
 } from 'firebase/firestore';
 
-console.log("[App.js] Value of 'auth' imported from ./Firebase.js:", auth);
-console.log("[App.js] Value of 'db' imported from ./Firebase.js:", db);
-
-// Helper function to generate unique IDs (slugify)
 const slugify = (text) => text.toString().toLowerCase().trim()
-  .replace(/\s+/g, '-')           // Replace spaces with -
-  .replace(/[^\w-]+/g, '')       // Remove all non-word chars
-  .replace(/--+/g, '-')         // Replace multiple - with single -
-  .replace(/^-+/, '')             // Trim - from start of text
-  .replace(/-+$/, '');            // Trim - from end of text
+  .replace(/\s+/g, '-')
+  .replace(/[^\w-]+/g, '')
+  .replace(/--+/g, '-')
+  .replace(/^-+/, '')
+  .replace(/-+$/, '');
 
-// Helper function to generate placeholder contentDetail
 const generateContentDetail = (title, customText = "", includeAdvancedExamples = false) => {
     const placeholderText = customText || `Comprehensive guide on ${title}. Learn about its principles, applications in VEX robotics, and best practices. Detailed examples and diagrams will be provided.`;
     
-    // Example of using an image from the public/images directory
     const imagePath = `/images/lessons/${slugify(title)}.png`;
 
     const advancedContent = `
@@ -112,8 +106,6 @@ const CHALLENGE_MAX_XP = 100;
 const QUESTIONS_PER_CHALLENGE = 5;
 const QUESTION_TIMER_DURATION = 20;
 
-
-// --- Component Definitions ---
 
 const LoginView = ({
   googleClientId,
@@ -719,7 +711,7 @@ const VexpertChallengeView = ({
                 <button
                   key={index}
                   className={`challenge-option-btn
-                    ${currentQuestion.selectedAnswer === index ? 'selected' : ''} // Assume selectedAnswer is part of question object in state for this view
+                    ${currentQuestion.selectedAnswer === index ? 'selected' : ''}
                     ${showChallengeAnswer && currentQuestion.correctAnswerIndex === index ? 'correct' : ''}
                     ${showChallengeAnswer && currentQuestion.selectedAnswer === index && currentQuestion.correctAnswerIndex !== index ? 'incorrect' : ''}
                   `}
@@ -733,7 +725,7 @@ const VexpertChallengeView = ({
             </div>
             {showChallengeAnswer && (
               <div className="challenge-feedback">
-                {currentQuestion.selectedAnswer === currentQuestion.correctAnswerIndex ? // Use selectedAnswer from question for feedback
+                {currentQuestion.selectedAnswer === currentQuestion.correctAnswerIndex ?
                   <p className="feedback-correct"><Check size={20}/> Correct!</p> :
                   <p className="feedback-incorrect"><X size={20}/> Incorrect. The correct answer was {String.fromCharCode(65 + currentQuestion.correctAnswerIndex)}.</p>
                 }
@@ -772,7 +764,6 @@ const VexpertChallengeView = ({
   };
 
 
-// --- Main App Component ---
 const App = () => {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -794,7 +785,7 @@ const App = () => {
   const [challengeQuestions, setChallengeQuestions] = useState([]);
   const [currentChallengeQuestionIdx, setCurrentChallengeQuestionIdx] = useState(0);
   const [challengeScore, setChallengeScore] = useState(0);
-  const [challengeSelectedAnswer, setChallengeSelectedAnswer] = useState(null); // This is for App state
+  const [challengeSelectedAnswer, setChallengeSelectedAnswer] = useState(null);
   const [showChallengeAnswer, setShowChallengeAnswer] = useState(false);
   const [challengeTimer, setChallengeTimer] = useState(QUESTION_TIMER_DURATION);
   const [theme, setTheme] = useState('light');
@@ -837,8 +828,8 @@ const App = () => {
   category: 'Hardware',
   title: 'Structure',
   description: 'C-Channels and Angles, Fasteners, Retainers, Gussets and Brackets, Bearings, Plates and Flat Bars',
-  duration: 'Approx. 30 min',
-  lessons: 6,
+  duration: 'Approx. 40 min',
+  lessons: 7,
   difficulty: 'Beginner',
   color: 'blue',
   icon: Puzzle,
@@ -846,8 +837,9 @@ const App = () => {
    lessons: [
     { id: slugify('C-Channels and Angles'), title: 'C-Channels and Angles', type: 'lesson', xp: 20, contentDetail: generateContentDetail('C-Channels and Angles', "Important components for main structural foundations. The most commonly used type of metal in VEX, C-Channels provide a stable, secure grounding for a majority of subsystems that can be used.", true) },
     { id: slugify('Fasteners'), title: 'Fasteners', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Fasteners', "Crucial for attaching structural pieces to each other. In the scope of the VEX Robotics Competition, the typical screw will be steel and will have an #8-32 thread size.") },
-    { id: slugify('Retainers'), title: 'Retainers', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Retainers', "Simplify robot construction with hex nut retainers and standoffs retainers. Retainers are nylon, hexagonally-shaped parts which have varying protrusions depending on the type of retainer used.") },
     { id: slugify('Gussets and Brackets'), title: 'Gussets and Brackets', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Gussets and Brackets', "Smaller metal pieces used to mount structural components. There are many different varieties of Gusset available to use in the VEX Robotics Competition.") },
+    { id: slugify('Structure Principles Quiz'), title: 'Structure Principles Quiz', type: 'quiz', xp: 35 },
+    { id: slugify('Retainers'), title: 'Retainers', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Retainers', "Simplify robot construction with hex nut retainers and standoffs retainers. Retainers are nylon, hexagonally-shaped parts which have varying protrusions depending on the type of retainer used.") },
     { id: slugify('Bearings'), title: 'Bearings', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Bearings', "Ensure smooth, frictionless motion in moving parts. The most frequently used type of bearing among competition teams, Bearing Flats are most often used on joints.") },
     { id: slugify('Plates and Flat Bars'), title: 'Plates and Flat Bars', type: 'lesson', xp: 15, contentDetail: generateContentDetail('Plates and Flat Bars', "Versatile structural components with a variety of uses. As barebones as it gets, Plate Metal is a 5x15 or 5x25 hole plate.") },
    ]
@@ -879,8 +871,8 @@ const App = () => {
   category: 'Hardware',
   title: 'Drivetrains',
   description: 'Tank Drive, Mecanum Drive, Holonomic Drive (Non-Mecanum), Designing a Drivetrain, Drivetrain Best Practices',
-  duration: 'Approx. 90 min',
-  lessons: 5,
+  duration: 'Approx. 100 min',
+  lessons: 6,
   difficulty: 'Intermediate',
   color: 'blue',
   icon: Truck,
@@ -889,6 +881,7 @@ const App = () => {
     { id: slugify('Tank Drive'), title: 'Tank Drive', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Tank Drive', "Tank drives are a very popular type of drivetrain used in the VEX Robotics Competition.") },
     { id: slugify('Mecanum Drive'), title: 'Mecanum Drive', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Mecanum Drive', "The Mecanum Drive is just as simple to build as the Tank Drive, but has the ability to drive sideways.") },
     { id: slugify('Holonomic Drive (Non-Mecanum)'), title: 'Holonomic Drive (Non-Mecanum)', type: 'lesson', xp: 25, contentDetail: generateContentDetail('Holonomic Drive (Non-Mecanum)', "Holonomic drives have become a popular choice for VEX Robotics teams due to their enhanced maneuverability and flexibility in movement. This primarily covers X-Drives and H-Drives.") },
+    { id: slugify('Drivetrain Concepts Quiz'), title: 'Drivetrain Concepts Quiz', type: 'quiz', xp: 35 },
     { id: slugify('Designing a Drivetrain'), title: 'Designing a Drivetrain', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Designing a Drivetrain', "The performance of any drivetrain is based not only on the type selected, but also on the quality with which it is designed and built.") },
     { id: slugify('Drivetrain Best Practices'), title: 'Drivetrain Best Practices', type: 'lesson', xp: 20, contentDetail: generateContentDetail('Drivetrain Best Practices', "This video does a great job show casing some of the best practices when building a drivetrain, focusing on core components like bearing blocks, standoffs, and C-Channels.") },
    ]
@@ -1027,13 +1020,21 @@ const App = () => {
         { id: 2, question: 'What is a compound gear ratio?', options: ['A ratio with more than two gears', 'Multiple gear pairs where the output of one pair is the input to the next', 'A gear ratio that is difficult to calculate', 'A gear ratio used only in drivetrains'], correct: 1, explanation: 'A compound gear ratio involves multiple gear pairs, multiplying their individual ratios to achieve a larger overall ratio.' },
       ]
     },
-    'intro-knowledge-check': {
-      title: 'V5 Fundamentals Quiz',
+    'structure-principles-quiz': {
+      title: 'Structure Principles Quiz',
       questions: [
-        { id: 1, question: 'How many Smart Ports does a VEX V5 Brain have?', options: ['12', '8', '21', '16'], correct: 2, explanation: 'The VEX V5 Brain features 21 Smart Ports for connecting motors and sensors.' },
-        { id: 2, question: 'Which V5 Smart Motor gear cartridge provides the highest torque?', options: ['Red (100 RPM)', 'Green (200 RPM)', 'Blue (600 RPM)', 'They all have the same torque'], correct: 0, explanation: 'The Red 100 RPM gear cartridge is geared for the highest torque output, sacrificing speed.' },
-        { id: 3, question: 'What is a primary function of the VEX V5 Inertial Sensor (IMU)?', options: ['Detecting colors', 'Measuring distance to objects', 'Measuring orientation and heading', 'Controlling motor speed directly'], correct: 2, explanation: 'The IMU is crucial for determining the robot\'s orientation, including heading, roll, and pitch.' },
+        { id: 1, question: 'What is the primary function of a Bearing Flat in a VEX robot design?', options: ['To connect two C-Channels at a 90-degree angle.', 'To reduce friction on a rotating shaft.', 'To secure a motor to the chassis.', 'To act as a primary structural element.'], correct: 1, explanation: 'Bearings are crucial for allowing shafts to spin smoothly with minimal friction, preventing wear and ensuring efficient power transfer.' },
+        { id: 2, question: 'Which part is specifically designed to reinforce joints and create strong connections, often in a triangular pattern?', options: ['Standoff', 'C-Channel', 'Flex Wheel', 'Gusset'], correct: 3, explanation: 'Gussets are small plates used to strengthen the connection between two structural parts, significantly increasing the rigidity of the joint.' },
+        { id: 3, question: 'In VEX, what is the standard thread size for the vast majority of screws and nuts used?', options: ['#6-32', '#10-24', '#8-32', 'M4'], correct: 2, explanation: 'The VEX EDR system is standardized around the #8-32 screw size for almost all structural connections.' }
       ]
+    },
+    'drivetrain-concepts-quiz': {
+        title: 'Drivetrain Concepts Quiz',
+        questions: [
+            { id: 1, question: 'What is the key advantage of a Mecanum Drive compared to a standard Tank Drive?', options: ['It is much faster in a straight line.', 'It uses fewer motors.', 'It can move sideways (strafe) without turning.', 'It has better traction for pushing.'], correct: 2, explanation: 'Mecanum wheels, with their angled rollers, allow the robot to move in any direction (holonomic motion), including sideways, which is known as strafing.' },
+            { id: 2, question: 'What is a major design consideration you must account for when building a robust Tank Drive?', options: ['Ensuring all wheels are omni-directional wheels.', 'Making the chassis as flexible as possible.', 'Properly supporting shafts with bearings to prevent bending.', 'Using the smallest possible gears for the drive.'], correct: 2, explanation: 'Drivetrain shafts are under significant stress. Supporting them on both sides of the wheel with bearings prevents friction, shaft bending, and power loss.' },
+            { id: 3, question: 'A holonomic drive system (like an X-Drive or H-Drive) is defined by its ability to...', options: ['Climb steep ramps easily.', 'Translate and rotate simultaneously and independently.', 'Operate silently.', 'Be built with only aluminum parts.'], correct: 1, explanation: 'Holonomic drives have full maneuverability in a 2D plane, meaning they can move forward/backward, side-to-side, and rotate all at the same time.' }
+        ]
     },
     'building-quiz': { 
       title: 'Building Principles Quiz',
@@ -1081,30 +1082,23 @@ const App = () => {
   ], []);
 
   const fetchUserProfile = useCallback(async (firebaseUserId) => {
-    console.log("Attempting to fetch user profile for Firebase UID:", firebaseUserId);
     if (!db) {
-      console.error("[fetchUserProfile] Firestore 'db' instance is not available. Firebase might not be initialized correctly.");
       return null;
     }
     try {
       const userDocRef = doc(db, "users", firebaseUserId);
       const userSnap = await getDoc(userDocRef);
       if (userSnap.exists()) {
-        console.log("Profile found in Firestore for Firebase UID:", firebaseUserId, userSnap.data());
         return { id: userSnap.id, ...userSnap.data() };
       }
-      console.log("No profile in Firestore for Firebase UID:", firebaseUserId);
       return null;
     } catch (error) {
-      console.error("Error in fetchUserProfile for Firebase UID:", firebaseUserId, error);
       return null;
     }
   }, []);
 
   const fetchUserProgress = useCallback(async (firebaseUserId) => {
-    console.log("Attempting to fetch user progress for Firebase UID:", firebaseUserId);
     if (!db) {
-      console.error("[fetchUserProgress] Firestore 'db' instance is not available.");
       return;
     }
     try {
@@ -1115,16 +1109,13 @@ const App = () => {
         loadedProgress[docSnap.id] = docSnap.data();
       });
       setUserProgress(loadedProgress);
-      console.log("User progress fetched for Firebase UID:", firebaseUserId, loadedProgress);
     } catch (error) {
-      console.error("Error in fetchUserProgress for Firebase UID:", firebaseUserId, error);
     }
   }, []);
 
   const fetchUserTeam = useCallback(async (teamId, currentUserIdToUpdate) => {
-    console.log("Attempting to fetch team with ID:", teamId);
-    if (!teamId) { setUserTeam(null); console.log("No teamId provided to fetchUserTeam."); return null; }
-    if (!db) { console.error("[fetchUserTeam] Firestore 'db' instance is not available."); return null; }
+    if (!teamId) { setUserTeam(null); return null; }
+    if (!db) { return null; }
 
     try {
       const teamDocRef = doc(db, "teams", teamId);
@@ -1135,13 +1126,10 @@ const App = () => {
             teamData.memberIds = [];
         }
         setUserTeam(teamData);
-        console.log("Team data fetched:", teamData);
         return teamData;
       } else {
         setUserTeam(null);
-        console.warn("Team document not found for ID:", teamId);
         if (currentUserIdToUpdate) {
-          console.log("Attempting to clear dangling teamId from user profile:", currentUserIdToUpdate);
           const userRef = doc(db, "users", currentUserIdToUpdate);
           await updateDoc(userRef, { teamId: null });
           setUser(prevUser => {
@@ -1150,38 +1138,30 @@ const App = () => {
             }
             return prevUser;
           });
-          console.log("Dangling teamId cleared from user profile:", currentUserIdToUpdate);
         }
         return null;
       }
     } catch (error) {
-      console.error("Error in fetchUserTeam for team ID:", teamId, error);
       setUserTeam(null);
       return null;
     }
   }, []);
 
   useEffect(() => {
-    console.log("App.js: Auth listener effect is running.");
     if (!auth) {
-      console.error("App.js: Firebase 'auth' service is not available in onAuthStateChanged. Firebase might not be initialized correctly in Firebase.js or imported incorrectly.");
       setLoading(false);
       setMessage("Critical Firebase Error: Auth service not loaded. Please check console and Firebase.js configuration.");
       return;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseAuthUser) => {
-      console.log("App.js: onAuthStateChanged triggered. Firebase Auth User:", firebaseAuthUser ? firebaseAuthUser.uid : 'null');
-
       try {
         if (firebaseAuthUser) {
-          console.log("App.js: Firebase Auth User signed in. UID:", firebaseAuthUser.uid);
           setMessage("Firebase authenticated. Loading your Vexcel profile...");
 
           let userProfile = await fetchUserProfile(firebaseAuthUser.uid);
 
           if (!userProfile) {
-            console.log("App.js: No Firestore profile for UID:", firebaseAuthUser.uid, ". Creating new profile.");
             setMessage("Welcome! Creating your Vexcel profile...");
             const newUserProfileData = {
               id: firebaseAuthUser.uid,
@@ -1191,16 +1171,12 @@ const App = () => {
               xp: 0, level: 1, streak: 1, teamId: null,
               createdAt: serverTimestamp(), lastLogin: serverTimestamp(),
             };
-            console.log("[App.js] Attempting to create user profile with data:", JSON.stringify(newUserProfileData));
             if (!db) {
-              console.error("App.js: Firestore 'db' instance is NOT available for creating profile.");
               throw new Error("Firestore not available for profile creation. Check Firebase.js and initialization logs.");
             }
             await setDoc(doc(db, "users", firebaseAuthUser.uid), newUserProfileData);
             userProfile = newUserProfileData;
-            console.log("App.js: New Firestore profile CREATED for UID:", firebaseAuthUser.uid);
           } else {
-            console.log("App.js: Existing Firestore profile FOUND for UID:", firebaseAuthUser.uid, ". Updating profile.");
              setMessage("Profile found. Finalizing login...");
             const profileUpdates = { lastLogin: serverTimestamp() };
             if (firebaseAuthUser.displayName && firebaseAuthUser.displayName !== userProfile.name) {
@@ -1214,46 +1190,36 @@ const App = () => {
             }
 
             if (Object.keys(profileUpdates).length > 0) {
-                console.log("[App.js] Attempting to update user profile with data:", JSON.stringify(profileUpdates));
                 if (!db) {
-                  console.error("App.js: Firestore 'db' instance is NOT available for updating profile.");
                   throw new Error("Firestore not available for profile update. Check Firebase.js and initialization logs.");
                 }
                 await updateDoc(doc(db, "users", firebaseAuthUser.uid), profileUpdates);
             }
             userProfile = { ...userProfile, ...profileUpdates }; 
-            console.log("App.js: Firestore profile UPDATED for UID:", firebaseAuthUser.uid);
           }
 
           setUser(userProfile);
-          console.log("App.js: User state (Firestore profile) set. Fetching progress for UID:", firebaseAuthUser.uid);
           await fetchUserProgress(firebaseAuthUser.uid);
 
           if (userProfile.teamId) {
-            console.log("App.js: User has teamId:", userProfile.teamId, ". Fetching team data.");
             const fetchedTeam = await fetchUserTeam(userProfile.teamId, userProfile.id);
             if (!fetchedTeam) { 
                 setUser(prev => ({...prev, teamId: null}));
             }
           } else {
             setUserTeam(null);
-            console.log("App.js: User has no teamId.");
           }
 
           setCurrentView('dashboard');
           setMessage('');
-          console.log("App.js: User setup complete. View set to dashboard.");
 
         } else {
-          console.log("App.js: No Firebase Auth User signed in. Resetting user state.");
           setUser(null); setUserTeam(null); setUserProgress({});
           setCurrentView('login');
           setSelectedModule(null); setCurrentLesson(null);
           setMessage('');
         }
       } catch (error) {
-        console.error("App.js: CRITICAL ERROR within onAuthStateChanged async block:", error);
-        console.error("App.js: Firestore operation error details:", error.code, error.message, error.stack);
         setUser(null);
         setUserTeam(null);
         setUserProgress({});
@@ -1261,13 +1227,11 @@ const App = () => {
         setMessage(`Error setting up your session: ${error.message}. Please check the console and Firebase project setup (Firestore enabled & correct rules).`);
         setActionLoading(false);
       } finally {
-        console.log("App.js: onAuthStateChanged finally block. setLoading(false).");
         setLoading(false);
       }
     });
 
     return () => {
-      console.log("App.js: Auth listener cleaning up.");
       unsubscribe();
     };
   }, [fetchUserProfile, fetchUserProgress, fetchUserTeam]);
@@ -1284,8 +1248,7 @@ const App = () => {
   const handleChallengeAnswer = useCallback((selectedIndex) => {
     if (showChallengeAnswer) return; 
     setShowChallengeAnswer(true);
-    setChallengeSelectedAnswer(selectedIndex); // Store user's choice for UI feedback
-    // Update the specific question in challengeQuestions to include selectedAnswer for the VexpertChallengeView
+    setChallengeSelectedAnswer(selectedIndex);
     setChallengeQuestions(prevQuestions => prevQuestions.map((q, idx) => 
         idx === currentChallengeQuestionIdx ? { ...q, selectedAnswer: selectedIndex } : q
     ));
@@ -1309,9 +1272,7 @@ const App = () => {
 
 
   const handleLoginSuccess = async (credentialResponse) => {
-    console.log("App.js: Google Login Button Success. Credential Token (start):", credentialResponse.credential ? credentialResponse.credential.substring(0,30)+"..." : "N/A");
     if (!auth) {
-        console.error("App.js: FATAL in handleLoginSuccess - Firebase 'auth' service is not available!");
         setMessage("Critical Firebase Error: Auth service not loaded. Cannot process login.");
         setActionLoading(false);
         return;
@@ -1321,11 +1282,8 @@ const App = () => {
     try {
       const idToken = credentialResponse.credential;
       const credential = FirebaseGoogleAuthProvider.credential(idToken);
-      console.log("App.js: Attempting Firebase signInWithCredential...");
       const firebaseAuthResult = await signInWithCredential(auth, credential);
-      console.log("App.js: Firebase signInWithCredential successful. Firebase User UID:", firebaseAuthResult.user.uid);
     } catch (error) {
-      console.error("App.js: Error in handleLoginSuccess (Firebase signInWithCredential):", error);
       if (error.code === 'auth/configuration-not-found') {
           setMessage(`Firebase Config Error: ${error.message}. Please ensure Firebase is correctly configured with your project details in Firebase.js.`);
       } else if (error.code === 'auth/network-request-failed') {
@@ -1341,15 +1299,12 @@ const App = () => {
 
 
   const handleLoginError = (error) => {
-    console.error("App.js: Google Login Button Error (@react-oauth/google):", error);
     setMessage('Google login failed. Please ensure pop-ups are enabled and try again.');
     setActionLoading(false);
   };
 
   const handleLogout = async () => {
-    console.log("App.js: handleLogout called.");
     if (!auth) {
-        console.error("App.js: FATAL in handleLogout - Firebase 'auth' service is not available!");
         setMessage("Critical Firebase Error: Auth service not loaded. Cannot process logout.");
         setUser(null); setUserTeam(null); setUserProgress({}); setCurrentView('login');
         return;
@@ -1358,9 +1313,7 @@ const App = () => {
     try {
       await firebaseSignOut(auth);
       googleLogout(); 
-      console.log("App.js: Firebase sign out and Google logout successful.");
     } catch (error) {
-      console.error("App.js: Error during logout:", error);
       setMessage('Error during logout.');
     } finally {
       setActionLoading(false);
@@ -1410,20 +1363,17 @@ const App = () => {
       if(user.id && db) { 
           const userRef = doc(db, "users", user.id);
           updateDoc(userRef, { level: newLevel })
-            .then(() => console.log("App.js: Level updated in Firestore for UID:", user.id))
-            .catch(err => console.error("App.js: Error updating level in Firestore:", err));
+            .catch(err => {});
       } else if (!db) { 
-          console.error("App.js: Cannot update level in Firestore, 'db' instance is not available.");
       }
     }
   }, [user]);
 
 
   const handleCompleteItem = async (moduleId, lessonId, itemType, score = null, xpEarned = 0) => {
-    if (!user || !user.id) {setMessage("Error: User not identified."); console.error("App.js: handleCompleteItem - User not identified."); return;}
-    if (!db) {setMessage("Error: Database service unavailable."); console.error("App.js: handleCompleteItem - DB not available."); return;}
+    if (!user || !user.id) {setMessage("Error: User not identified."); return;}
+    if (!db) {setMessage("Error: Database service unavailable."); return;}
 
-    console.log(`App.js: handleCompleteItem called for UID: ${user.id}, moduleId: ${moduleId}, lessonId: ${lessonId}, xp: ${xpEarned}`);
     setActionLoading(true);
     const userRef = doc(db, "users", user.id);
     const progressDocRef = doc(db, `users/${user.id}/progress`, moduleId);
@@ -1452,7 +1402,6 @@ const App = () => {
       }
 
       await batch.commit();
-      console.log("App.js: Item completion saved to Firebase.");
 
       setUser(prevUser => ({ ...prevUser, xp: (prevUser.xp || 0) + xpEarned }));
       setUserProgress(prev => ({ ...prev, [moduleId]: { ...prev[moduleId] || {lessons:{}, moduleXp:0}, lessons: updatedLessonData, moduleXp: (prev[moduleId]?.moduleXp || 0) + xpEarned }}));
@@ -1466,7 +1415,6 @@ const App = () => {
 
       setMessage(`Completed: ${itemType}! +${xpEarned} XP`);
     } catch (error) {
-      console.error("App.js: Error completing item in Firebase:", error);
       setMessage("Failed to save progress. Please try again.");
     } finally {
       setActionLoading(false);
@@ -1480,7 +1428,6 @@ const App = () => {
     if (!user || !user.id) { setMessage("User not logged in. Please sign in again."); return; }
     if (!db) {setMessage("Database service unavailable. Cannot join team."); return;}
 
-    console.log("App.js: handleJoinTeam called with code:", teamCodeToJoin, "for user:", user.id);
     setActionLoading(true);
     try {
       const teamsQuery = query(collection(db, "teams"), where("code", "==", teamCodeToJoin));
@@ -1532,7 +1479,6 @@ const App = () => {
       setMessage(`Successfully joined team: ${finalTeamData.name}!`);
       setJoinTeamCodeInput('');
     } catch (error) {
-      console.error("App.js: Error joining team:", error);
       setMessage("Failed to join team. " + error.message);
     } finally {
       setActionLoading(false);
@@ -1545,7 +1491,6 @@ const App = () => {
     if (!user || !user.id) { setMessage("User not logged in. Please sign in again."); return; }
     if (!db) {setMessage("Database service unavailable. Cannot create team."); return;}
 
-    console.log("App.js: handleCreateTeam called with name:", createTeamNameInput, "for user:", user.id);
     setActionLoading(true);
     try {
       const newTeamCode = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -1576,7 +1521,6 @@ const App = () => {
       setMessage(`Team "${createdTeamForState.name}" created! Your Team Code is: ${newTeamCode}`);
       setCreateTeamNameInput('');
     } catch (error) {
-      console.error("App.js: Error creating team:", error);
       setMessage("Failed to create team. " + error.message);
     } finally {
       setActionLoading(false);
@@ -1590,7 +1534,6 @@ const App = () => {
     }
     if (!db) {setMessage("Database service unavailable. Cannot leave team."); return;}
 
-    console.log("App.js: handleLeaveTeam called for team:", userTeam.id, "by user:", user.id);
     setActionLoading(true);
     try {
       const teamId = userTeam.id;
@@ -1609,7 +1552,6 @@ const App = () => {
       if (updatedTeamSnap.exists()) {
         const updatedTeamData = updatedTeamSnap.data();
         if (!updatedTeamData.memberIds || updatedTeamData.memberIds.length === 0) {
-          console.log(`Team ${teamName} (${teamId}) has 0 members after leave. Deleting team.`);
           await deleteDoc(teamRef);
           setAllTeams(prevTeams => prevTeams.filter(t => t.id !== teamId)); 
           setMessage(`You have left team: ${teamName}. The team was empty and has been deleted.`);
@@ -1632,7 +1574,6 @@ const App = () => {
       setUser(prevUser => ({...prevUser, teamId: null})); 
 
     } catch (error) {
-      console.error("App.js: Error leaving team:", error);
       setMessage("Failed to leave team. " + error.message);
     } finally {
       setActionLoading(false);
@@ -1654,7 +1595,6 @@ const App = () => {
         return;
     }
 
-    console.log("App.js: handleDeleteTeam called for team:", userTeam.id, "by owner:", user.id);
     setActionLoading(true);
     try {
         const teamIdToDelete = userTeam.id;
@@ -1679,7 +1619,6 @@ const App = () => {
         setMessage(`Team "${teamNameToDelete}" has been successfully deleted.`);
 
     } catch (error) {
-        console.error("App.js: Error deleting team:", error);
         setMessage("Failed to delete team. " + error.message);
     } finally {
       setActionLoading(false);
@@ -1689,27 +1628,21 @@ const App = () => {
 
   const fetchAllTeamsForBrowse = useCallback(async () => {
     if (!db) {
-        console.error("[fetchAllTeamsForBrowse] DB not available. Aborting fetch.");
         setMessage("Database error. Cannot fetch teams.");
         return;
     }
     if (user && (currentView === 'browseTeams' || currentView === 'leaderboard' || allTeams.length === 0)) {
-      console.log(`[fetchAllTeamsForBrowse] Called for view: ${currentView} or initial load. Setting actionLoading TRUE.`);
       setActionLoading(true);
       try {
         const teamsColRef = collection(db, "teams");
         let q;
         if (currentView === 'leaderboard') {
           q = query(teamsColRef, orderBy("totalXP", "desc"), limit(50));
-          console.log("[fetchAllTeamsForBrowse] Querying for LEADERBOARD (orderBy totalXP desc, limit 50).");
         } else {
           q = query(teamsColRef, orderBy("createdAt", "desc"), limit(100)); 
-          console.log("[fetchAllTeamsForBrowse] Querying for BROWSE/INITIAL (orderBy createdAt desc, limit 100).");
         }
 
-        console.log(`[fetchAllTeamsForBrowse] Executing getDocs() for ${currentView}...`);
         const querySnapshot = await getDocs(q);
-        console.log(`[fetchAllTeamsForBrowse] getDocs() completed. Found ${querySnapshot.docs.length} teams for ${currentView}.`);
 
         const loadedTeams = querySnapshot.docs.map(docSnap => {
             const data = docSnap.data();
@@ -1721,17 +1654,12 @@ const App = () => {
             };
         });
         setAllTeams(loadedTeams);
-        console.log(`[fetchAllTeamsForBrowse] setAllTeams done for ${currentView}. Team count: ${loadedTeams.length}`);
       } catch (error) {
-        console.error(`[fetchAllTeamsForBrowse] Error fetching teams for ${currentView}:`, error);
-        console.error(`[fetchAllTeamsForBrowse] Error details: Code: ${error.code}, Message: ${error.message}`);
         setMessage(`Could not load teams for ${currentView}: ${error.message}. Check console for Firestore errors (e.g. missing index).`);
       } finally {
-        console.log(`[fetchAllTeamsForBrowse] FINALLY block. Setting actionLoading FALSE for ${currentView}.`);
         setActionLoading(false);
       }
     } else {
-        console.log(`[fetchAllTeamsForBrowse] Not fetching. Conditions not met. Current view: ${currentView}, User: ${!!user}, AllTeams length: ${allTeams.length}`);
     }
   }, [currentView, user, allTeams.length]); 
 
@@ -1743,7 +1671,6 @@ const App = () => {
 
 
   const startVexpertChallenge = () => {
-    console.log("App.js: startVexpertChallenge called.");
     setActionLoading(true);
     if (selectedChallengeCategories.length === 0) {setMessage("Please select at least one category."); setActionLoading(false); return;}
     const filtered = vexpertChallengeBank.filter(q => selectedChallengeCategories.includes(q.category));
@@ -1757,7 +1684,7 @@ const App = () => {
     if (count <= 0) {setMessage("Cannot start with 0 questions."); setActionLoading(false); return;}
 
     const shuffled = [...filtered].sort(() => 0.5 - Math.random());
-    setChallengeQuestions(shuffled.slice(0, count).map(q => ({...q, selectedAnswer: null}))); // Initialize selectedAnswer for each question
+    setChallengeQuestions(shuffled.slice(0, count).map(q => ({...q, selectedAnswer: null})));
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0); setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
     setChallengeTimer(QUESTION_TIMER_DURATION); setChallengeState('active'); setActionLoading(false);
     setMessage(`Challenge started with ${count} questions! Good luck!`);
@@ -1766,7 +1693,7 @@ const App = () => {
 
   const handleNextChallengeQuestion = async () => {
     setShowChallengeAnswer(false);
-    setChallengeSelectedAnswer(null); // Clear global selected answer
+    setChallengeSelectedAnswer(null);
 
     if (currentChallengeQuestionIdx < challengeQuestions.length - 1) {
       setCurrentChallengeQuestionIdx(i => i + 1);
@@ -1774,7 +1701,6 @@ const App = () => {
     } else { 
       setChallengeState('results');
       const xp = challengeQuestions.length > 0 ? Math.round((challengeScore / challengeQuestions.length) * CHALLENGE_MAX_XP) : 0;
-      console.log("App.js: Challenge finished. Score:", challengeScore, "XP:", xp);
 
       if (user && user.id && xp > 0 && db) {
         setActionLoading(true);
@@ -1796,7 +1722,6 @@ const App = () => {
           }
           setMessage(`Challenge finished! Score: ${challengeScore}/${challengeQuestions.length}. You earned ${xp} XP!`);
         } catch (e) {
-          console.error("App.js: Error saving challenge XP:", e);
           setMessage("Error saving your XP. Your score was " + `${challengeScore}/${challengeQuestions.length}.`);
         }
         finally { setActionLoading(false); }
@@ -1812,7 +1737,6 @@ const App = () => {
     setChallengeState('idle'); setChallengeQuestions([]);
     setCurrentChallengeQuestionIdx(0); setChallengeScore(0);
     setChallengeSelectedAnswer(null); setShowChallengeAnswer(false);
-    console.log("App.js: Challenge reset to configuration screen.");
   };
 
 
@@ -1870,7 +1794,6 @@ const App = () => {
         </div>
       )}
 
-      {/* Global Styles */}
       <style jsx global>{`
         :root {
             --color-blue-500: #3b82f6; --color-blue-600: #2563eb; --color-blue-100: #dbeafe; --color-blue-50: #eff6ff; --color-blue-300: #93c5fd;
