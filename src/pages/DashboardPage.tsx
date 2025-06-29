@@ -16,75 +16,64 @@ import {
   Zap,
   ArrowRight,
   Play,
-  Loader2
+  Loader2,
+  AlertCircle
 } from 'lucide-react';
 
 const DashboardPage: React.FC = () => {
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, error: authError } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
-      if (!user) return;
+      if (!user || authLoading) return;
       
       try {
         setIsLoading(true);
         setError(null);
+        console.log('Dashboard: Fetching lessons...');
+        
         const lessonsData = await getAllLessons();
-        console.log('Lessons loaded:', lessonsData.length);
-        setLessons(lessonsData);
-      } catch (err) {
-        console.error('Error fetching dashboard data:', err);
-        setError('Failed to load dashboard data');
+        console.log('Dashboard: Lessons loaded:', lessonsData?.length || 0);
+        setLessons(lessonsData || []);
+      } catch (err: any) {
+        console.error('Dashboard: Error fetching data:', err);
+        setError(err.message || 'Failed to load dashboard data');
       } finally {
         setIsLoading(false);
       }
     };
 
-    if (user && !authLoading) {
-      fetchData();
-    }
+    fetchData();
   }, [user, authLoading]);
 
-  // Don't show loading if auth is still loading
+  // Show loading while auth is loading
   if (authLoading) {
-    return null; // Let App.tsx handle the main loading state
-  }
-
-  if (!user) {
-    return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Please sign in to view your dashboard</h1>
-        </div>
-      </div>
-    );
-  }
-
-  if (isLoading) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Loading dashboard...</p>
+            <p className="text-gray-600 dark:text-gray-400">Loading your dashboard...</p>
           </div>
         </div>
       </div>
     );
   }
 
-  if (error) {
+  // Show auth error
+  if (authError) {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
         <div className="text-center">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Error</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2">{error}</p>
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Authentication Error</h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{authError}</p>
           <button 
             onClick={() => window.location.reload()} 
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Retry
           </button>
@@ -93,9 +82,64 @@ const DashboardPage: React.FC = () => {
     );
   }
 
-  const recentLessons = lessons.slice(0, 3).map(lesson => ({
+  // Show sign in prompt
+  if (!user) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <Users className="w-8 h-8 text-white" />
+          </div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome to Vexcel</h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-6">Please sign in to view your dashboard and start learning VEX robotics.</p>
+          <Link 
+            to="/" 
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-200"
+          >
+            Go to Home Page
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // Show data loading
+  if (isLoading) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
+            <p className="text-gray-600 dark:text-gray-400">Loading dashboard data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Show data error
+  if (error) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Error Loading Dashboard</h1>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()} 
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Safe array access with fallbacks
+  const recentLessons = (lessons || []).slice(0, 3).map(lesson => ({
     ...lesson,
-    progress: user.completedLessons.includes(lesson.id) ? 100 : Math.floor(Math.random() * 80) + 10
+    progress: (user?.completedLessons || []).includes(lesson.id) ? 100 : Math.floor(Math.random() * 80) + 10
   }));
 
   const weeklyStats = [
@@ -113,21 +157,21 @@ const DashboardPage: React.FC = () => {
   const stats = [
     { 
       label: 'Current Level', 
-      value: user.level, 
+      value: user?.level || 1, 
       icon: Trophy, 
       gradient: 'from-blue-500 to-cyan-500',
       change: '+1 this week'
     },
     { 
       label: 'Lessons Completed', 
-      value: user.completedLessons.length, 
+      value: (user?.completedLessons || []).length, 
       icon: BookOpen, 
       gradient: 'from-green-500 to-emerald-500',
       change: '+3 this week'
     },
     { 
       label: 'Time Spent', 
-      value: `${Math.floor(user.totalTimeSpent / 60)}h`, 
+      value: `${Math.floor((user?.totalTimeSpent || 0) / 60)}h`, 
       icon: Clock, 
       gradient: 'from-purple-500 to-pink-500',
       change: '4.2h this week'
@@ -146,7 +190,7 @@ const DashboardPage: React.FC = () => {
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
-          Welcome back, {user.name}! 👋
+          Welcome back, {user?.name || 'Student'}! 👋
         </h1>
         <p className="text-gray-600 dark:text-gray-400 text-lg">
           Here's your learning progress and achievements.
@@ -168,16 +212,16 @@ const DashboardPage: React.FC = () => {
                   <Icon className="w-6 h-6 text-white" />
                 </div>
               </div>
-              {index === 0 && (
+              {index === 0 && user && (
                 <div className="mt-4">
                   <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
-                    <span>Progress to Level {user.level + 1}</span>
-                    <span>{user.xp % 200}/200 XP</span>
+                    <span>Progress to Level {(user.level || 1) + 1}</span>
+                    <span>{(user.xp || 0) % 200}/200 XP</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
                       className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-500" 
-                      style={{ width: `${(user.xp % 200) / 200 * 100}%` }}
+                      style={{ width: `${((user.xp || 0) % 200) / 200 * 100}%` }}
                     ></div>
                   </div>
                 </div>
@@ -203,7 +247,7 @@ const DashboardPage: React.FC = () => {
               </Link>
             </div>
             <div className="space-y-4">
-              {recentLessons.length > 0 ? recentLessons.map((lesson) => (
+              {recentLessons && recentLessons.length > 0 ? recentLessons.map((lesson) => (
                 <div key={lesson.id} className="group bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 border border-gray-200 dark:border-gray-600">
                   <div className="flex items-center space-x-4">
                     <div className={`flex-shrink-0 w-12 h-12 bg-gradient-to-r ${
@@ -285,7 +329,7 @@ const DashboardPage: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Achievements</h2>
           <div className="space-y-4">
-            {user.achievements.length > 0 ? user.achievements.map((achievementId, index) => (
+            {user?.achievements && user.achievements.length > 0 ? user.achievements.map((achievementId, index) => (
               <div
                 key={index}
                 className="p-4 rounded-xl border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 transition-all duration-200"

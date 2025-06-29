@@ -156,6 +156,76 @@ const getDefaultLessons = (): Lesson[] => {
       },
       createdAt: new Date(),
       updatedAt: new Date()
+    },
+    {
+      id: 'lesson-4',
+      title: 'Competition Strategies',
+      description: 'Learn winning strategies and tactics for VEX competitions.',
+      duration: 50,
+      difficulty: 'Advanced',
+      category: 'Competition',
+      order: 4,
+      rating: 4.8,
+      students: 650,
+      xpReward: 250,
+      sections: [
+        {
+          id: 'section-1',
+          title: 'Competition Basics',
+          content: 'Understanding VEX competition formats and rules...',
+          order: 1
+        }
+      ],
+      quiz: {
+        id: 'quiz-4',
+        questions: [
+          {
+            id: 'q1',
+            question: 'What is the most important aspect of competition strategy?',
+            options: ['Speed', 'Accuracy', 'Teamwork', 'All of the above'],
+            correctAnswer: 3,
+            explanation: 'Successful VEX competition requires a balance of speed, accuracy, and teamwork.',
+            difficulty: 'Medium'
+          }
+        ]
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
+    },
+    {
+      id: 'lesson-5',
+      title: 'Autonomous Programming',
+      description: 'Master autonomous robot programming for competition success.',
+      duration: 75,
+      difficulty: 'Advanced',
+      category: 'Programming',
+      order: 5,
+      rating: 4.6,
+      students: 320,
+      xpReward: 300,
+      sections: [
+        {
+          id: 'section-1',
+          title: 'Autonomous Basics',
+          content: 'Introduction to autonomous programming concepts...',
+          order: 1
+        }
+      ],
+      quiz: {
+        id: 'quiz-5',
+        questions: [
+          {
+            id: 'q1',
+            question: 'What is the key to successful autonomous programming?',
+            options: ['Complex algorithms', 'Sensor integration', 'Precise movements', 'All of the above'],
+            correctAnswer: 3,
+            explanation: 'Successful autonomous programming requires complex algorithms, proper sensor integration, and precise movements.',
+            difficulty: 'Hard'
+          }
+        ]
+      },
+      createdAt: new Date(),
+      updatedAt: new Date()
     }
   ];
 };
@@ -253,7 +323,7 @@ export const updateLessonProgress = async (
     }
   } catch (error) {
     console.error('Error updating lesson progress:', error);
-    throw error;
+    // Don't throw error, just log it
   }
 };
 
@@ -278,7 +348,7 @@ export const completeLessonQuiz = async (
     });
   } catch (error) {
     console.error('Error completing lesson quiz:', error);
-    throw error;
+    // Don't throw error, just log it
   }
 };
 
