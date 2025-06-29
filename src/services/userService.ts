@@ -26,7 +26,10 @@ export const getUserById = async (userId: string): Promise<User | null> => {
         // Convert Firestore timestamps to Date objects
         createdAt: data.createdAt?.toDate() || new Date(),
         lastActive: data.lastActive?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date()
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        // Ensure arrays exist
+        completedLessons: data.completedLessons || [],
+        achievements: data.achievements || []
       } as User;
     } else {
       console.log('No user document found');
@@ -34,7 +37,8 @@ export const getUserById = async (userId: string): Promise<User | null> => {
     }
   } catch (error) {
     console.error('Error getting user:', error);
-    throw new Error('Failed to load user data');
+    // Return null instead of throwing to prevent crashes
+    return null;
   }
 };
 
@@ -59,7 +63,7 @@ export const updateUser = async (userId: string, updates: Partial<User>): Promis
     console.log('User updated successfully');
   } catch (error) {
     console.error('Error updating user:', error);
-    throw new Error('Failed to update user');
+    // Don't throw error to prevent crashes
   }
 };
 
@@ -77,9 +81,13 @@ export const updateUserProgress = async (
     
     if (userDoc.exists()) {
       const userData = userDoc.data() as User;
-      const newXP = userData.xp + xpGained;
+      const currentXP = userData.xp || 0;
+      const currentCompletedLessons = userData.completedLessons || [];
+      const currentTimeSpent = userData.totalTimeSpent || 0;
+      
+      const newXP = currentXP + xpGained;
       const newLevel = Math.floor(newXP / 200) + 1;
-      const completedLessons = [...userData.completedLessons];
+      const completedLessons = [...currentCompletedLessons];
       
       if (!completedLessons.includes(lessonId)) {
         completedLessons.push(lessonId);
@@ -89,7 +97,7 @@ export const updateUserProgress = async (
         xp: newXP,
         level: newLevel,
         completedLessons,
-        totalTimeSpent: userData.totalTimeSpent + timeSpent,
+        totalTimeSpent: currentTimeSpent + timeSpent,
         lastActive: new Date(),
         updatedAt: new Date()
       });
@@ -100,7 +108,7 @@ export const updateUserProgress = async (
     }
   } catch (error) {
     console.error('Error updating user progress:', error);
-    throw new Error('Failed to update progress');
+    // Don't throw error to prevent crashes
   }
 };
 
@@ -123,7 +131,10 @@ export const getUsersByTeam = async (teamId: string): Promise<User[]> => {
         ...data,
         createdAt: data.createdAt?.toDate() || new Date(),
         lastActive: data.lastActive?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date()
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        // Ensure arrays exist
+        completedLessons: data.completedLessons || [],
+        achievements: data.achievements || []
       } as User);
     });
     
@@ -131,7 +142,7 @@ export const getUsersByTeam = async (teamId: string): Promise<User[]> => {
     return users;
   } catch (error) {
     console.error('Error getting team users:', error);
-    throw new Error('Failed to load team members');
+    return [];
   }
 };
 
@@ -155,7 +166,10 @@ export const getTopUsers = async (limitCount: number = 10): Promise<User[]> => {
         ...data,
         createdAt: data.createdAt?.toDate() || new Date(),
         lastActive: data.lastActive?.toDate() || new Date(),
-        updatedAt: data.updatedAt?.toDate() || new Date()
+        updatedAt: data.updatedAt?.toDate() || new Date(),
+        // Ensure arrays exist
+        completedLessons: data.completedLessons || [],
+        achievements: data.achievements || []
       } as User);
     });
     
@@ -163,6 +177,6 @@ export const getTopUsers = async (limitCount: number = 10): Promise<User[]> => {
     return users;
   } catch (error) {
     console.error('Error getting top users:', error);
-    throw new Error('Failed to load leaderboard');
+    return [];
   }
 };

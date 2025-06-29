@@ -26,7 +26,7 @@ import {
 const LessonViewPage: React.FC = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user, updateUser } = useAuth();
+  const { user, updateUser, refreshUser } = useAuth();
   const [lesson, setLesson] = useState<Lesson | null>(null);
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [currentSection, setCurrentSection] = useState(0);
@@ -154,6 +154,9 @@ const LessonViewPage: React.FC = () => {
           level: Math.floor(((user.xp || 0) + lesson.xpReward) / 200) + 1,
           totalTimeSpent: (user.totalTimeSpent || 0) + currentTime
         });
+
+        // Refresh user data to ensure sync
+        await refreshUser();
       }
 
       // Navigate back to lessons

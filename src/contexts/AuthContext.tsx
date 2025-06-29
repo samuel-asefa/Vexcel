@@ -13,6 +13,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<User>) => Promise<void>;
+  refreshUser: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -23,6 +24,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [firebaseUser, setFirebaseUser] = useState<FirebaseUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const refreshUser = async () => {
+    if (!firebaseUser) return;
+    
+    try {
+      const userData = await getUserById(firebaseUser.uid);
+      if (userData) {
+        setUser(userData);
+      }
+    } catch (err) {
+      console.error('Error refreshing user:', err);
+    }
+  };
 
   useEffect(() => {
     console.log('Setting up auth state listener...');
@@ -157,13 +171,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setError(null);
       console.log('Updating user:', updates);
       
+      // Update local state immediately for better UX
+      const updatedUser = { ...user, ...updates };
+      setUser(updatedUser);
+      
       try {
         await updateUserService(user.id, updates);
       } catch (firestoreError) {
-        console.warn('Firestore update failed, updating locally only:', firestoreError);
+        console.warn('Firestore update failed, keeping local changes:', firestoreError);
       }
       
-      setUser({ ...user, ...updates });
       console.log('User updated successfully');
     } catch (err: any) {
       console.error('Update user error:', err);
@@ -185,6 +202,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     login,
     logout,
     updateUser,
+    refreshUser,
     clearError
   };
 
@@ -201,4 +219,4 @@ export const useAuth = () => {
     throw new Error('useAuth must be used within an AuthProvider');
   }
   return context;
-};  
+};
