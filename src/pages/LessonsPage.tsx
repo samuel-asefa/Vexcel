@@ -14,7 +14,11 @@ import {
   Play,
   Trophy,
   Users,
-  Loader2
+  Loader2,
+  Wrench,
+  Code,
+  PenTool,
+  FileText
 } from 'lucide-react';
 
 const LessonsPage: React.FC = () => {
@@ -105,11 +109,21 @@ const LessonsPage: React.FC = () => {
 
   const getCategoryIcon = (category: string) => {
     switch (category) {
-      case 'Programming': return '💻';
-      case 'Hardware': return '🔧';
-      case 'Competition': return '🏆';
-      case 'Leadership': return '👥';
-      default: return '📚';
+      case 'Building': return Wrench;
+      case 'Programming': return Code;
+      case 'CAD': return PenTool;
+      case 'Notebook': return FileText;
+      default: return BookOpen;
+    }
+  };
+
+  const getCategoryColor = (category: string) => {
+    switch (category) {
+      case 'Building': return 'from-orange-500 to-red-500';
+      case 'Programming': return 'from-blue-600 to-blue-800';
+      case 'CAD': return 'from-purple-500 to-indigo-600';
+      case 'Notebook': return 'from-green-500 to-emerald-600';
+      default: return 'from-gray-500 to-gray-700';
     }
   };
 
@@ -117,13 +131,21 @@ const LessonsPage: React.FC = () => {
   const totalLessons = lessons?.length || 0;
   const completionPercentage = totalLessons > 0 ? Math.round((userCompletedLessons.length / totalLessons) * 100) : 0;
 
+  // Group lessons by category for better organization
+  const lessonsByCategory = filteredLessons.reduce((acc, lesson) => {
+    const category = lesson.category || 'Other';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(lesson);
+    return acc;
+  }, {} as Record<string, Lesson[]>);
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
       {/* Header */}
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">VEX Learning Curriculum</h1>
         <p className="text-gray-600 dark:text-gray-400">
-          Master VEX robotics with our comprehensive lesson library. Track your progress and unlock advanced content.
+          Master VEX robotics with our comprehensive lesson library organized by category. Track your progress and unlock advanced content.
         </p>
       </div>
 
@@ -133,7 +155,7 @@ const LessonsPage: React.FC = () => {
           <div>
             <h2 className="text-xl font-semibold mb-2">Your Learning Progress</h2>
             <p className="text-blue-100">
-              {userCompletedLessons.length} of {totalLessons} lessons completed
+              {userCompletedLessons.length} of {totalLessons} lessons completed across all categories
             </p>
           </div>
           <div className="mt-4 md:mt-0 flex items-center space-x-4">
@@ -163,6 +185,33 @@ const LessonsPage: React.FC = () => {
             ></div>
           </div>
         </div>
+      </div>
+
+      {/* Category Overview */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+        {['Building', 'Programming', 'CAD', 'Notebook'].map((category) => {
+          const Icon = getCategoryIcon(category);
+          const categoryLessons = lessons.filter(lesson => lesson.category === category);
+          const completedInCategory = categoryLessons.filter(lesson => userCompletedLessons.includes(lesson.id)).length;
+          const categoryProgress = categoryLessons.length > 0 ? Math.round((completedInCategory / categoryLessons.length) * 100) : 0;
+          
+          return (
+            <div key={category} className="bg-white dark:bg-gray-800 rounded-xl p-4 border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all duration-200">
+              <div className={`w-12 h-12 bg-gradient-to-r ${getCategoryColor(category)} rounded-xl flex items-center justify-center mb-3`}>
+                <Icon className="w-6 h-6 text-white" />
+              </div>
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-1">{category}</h3>
+              <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">{categoryLessons.length} lessons</p>
+              <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                <div 
+                  className={`bg-gradient-to-r ${getCategoryColor(category)} h-2 rounded-full transition-all duration-500`}
+                  style={{ width: `${categoryProgress}%` }}
+                ></div>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{categoryProgress}% complete</p>
+            </div>
+          );
+        })}
       </div>
 
       {/* Filters */}
@@ -207,92 +256,190 @@ const LessonsPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Lessons Grid */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredLessons && filteredLessons.length > 0 ? filteredLessons.map((lesson) => {
-          if (!lesson) return null;
-          
-          const isCompleted = userCompletedLessons.includes(lesson.id);
-          const isLocked = false; // For now, no lessons are locked
-          
-          return (
-            <div key={lesson.id} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow ${isLocked ? 'opacity-60' : ''}`}>
-              <div className="p-6">
-                <div className="flex items-start justify-between mb-4">
-                  <div className="text-2xl">{getCategoryIcon(lesson.category || '')}</div>
-                  <div className="flex items-center space-x-2">
-                    {isCompleted && (
-                      <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
-                        <CheckCircle className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                    {isLocked && (
-                      <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
-                        <Lock className="w-4 h-4 text-white" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{lesson.title || 'Untitled Lesson'}</h3>
-                <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">{lesson.description || 'No description available'}</p>
-
-                <div className="flex items-center justify-between mb-4">
-                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(lesson.difficulty || 'Beginner')}`}>
-                    {lesson.difficulty || 'Beginner'}
-                  </span>
-                  <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
-                    <Clock className="w-4 h-4" />
-                    <span>{lesson.duration || 0} min</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-1">
-                    <Star className="w-4 h-4 text-yellow-400 fill-current" />
-                    <span className="text-sm text-gray-600 dark:text-gray-400">{lesson.rating || 0}</span>
-                  </div>
-                  <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
-                    <Users className="w-4 h-4" />
-                    <span>{lesson.students || 0}</span>
-                  </div>
-                </div>
-
-                <div className="mb-4">
-                  <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
-                    <Trophy className="w-4 h-4" />
-                    <span>+{lesson.xpReward || 0} XP</span>
-                  </div>
-                </div>
-
-                {!isLocked ? (
-                  <Link
-                    to={`/lessons/${lesson.id}`}
-                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
-                  >
-                    <Play className="w-4 h-4" />
-                    <span>{isCompleted ? 'Review' : 'Start Lesson'}</span>
-                  </Link>
-                ) : (
-                  <button
-                    disabled
-                    className="w-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 py-2 px-4 rounded-lg font-medium cursor-not-allowed flex items-center justify-center space-x-2"
-                  >
-                    <Lock className="w-4 h-4" />
-                    <span>Complete previous lessons</span>
-                  </button>
-                )}
+      {/* Lessons by Category */}
+      {selectedCategory === 'all' ? (
+        Object.entries(lessonsByCategory).map(([category, categoryLessons]) => (
+          <div key={category} className="mb-12">
+            <div className="flex items-center mb-6">
+              <div className={`w-10 h-10 bg-gradient-to-r ${getCategoryColor(category)} rounded-xl flex items-center justify-center mr-4`}>
+                {React.createElement(getCategoryIcon(category), { className: "w-5 h-5 text-white" })}
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">{category}</h2>
+                <p className="text-gray-600 dark:text-gray-400">{categoryLessons.length} lessons available</p>
               </div>
             </div>
-          );
-        }) : (
-          <div className="col-span-full text-center py-12">
-            <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No lessons found</h3>
-            <p className="text-gray-600 dark:text-gray-400">Try adjusting your search or filter criteria.</p>
+            
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {categoryLessons.map((lesson) => {
+                const isCompleted = userCompletedLessons.includes(lesson.id);
+                const isLocked = false; // For now, no lessons are locked
+                
+                return (
+                  <div key={lesson.id} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow ${isLocked ? 'opacity-60' : ''}`}>
+                    <div className="p-6">
+                      <div className="flex items-start justify-between mb-4">
+                        <div className={`w-12 h-12 bg-gradient-to-r ${getCategoryColor(lesson.category || '')} rounded-xl flex items-center justify-center`}>
+                          {React.createElement(getCategoryIcon(lesson.category || ''), { className: "w-6 h-6 text-white" })}
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {isCompleted && (
+                            <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                              <CheckCircle className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                          {isLocked && (
+                            <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
+                              <Lock className="w-4 h-4 text-white" />
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{lesson.title || 'Untitled Lesson'}</h3>
+                      <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">{lesson.description || 'No description available'}</p>
+
+                      <div className="flex items-center justify-between mb-4">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(lesson.difficulty || 'Beginner')}`}>
+                          {lesson.difficulty || 'Beginner'}
+                        </span>
+                        <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
+                          <Clock className="w-4 h-4" />
+                          <span>{lesson.duration || 0} min</span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-1">
+                          <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{lesson.rating || 0}</span>
+                        </div>
+                        <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
+                          <Users className="w-4 h-4" />
+                          <span>{lesson.students || 0}</span>
+                        </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
+                          <Trophy className="w-4 h-4" />
+                          <span>+{lesson.xpReward || 0} XP</span>
+                        </div>
+                      </div>
+
+                      {!isLocked ? (
+                        <Link
+                          to={`/lessons/${lesson.id}`}
+                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                        >
+                          <Play className="w-4 h-4" />
+                          <span>{isCompleted ? 'Review' : 'Start Lesson'}</span>
+                        </Link>
+                      ) : (
+                        <button
+                          disabled
+                          className="w-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 py-2 px-4 rounded-lg font-medium cursor-not-allowed flex items-center justify-center space-x-2"
+                        >
+                          <Lock className="w-4 h-4" />
+                          <span>Complete previous lessons</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
-        )}
-      </div>
+        ))
+      ) : (
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredLessons.map((lesson) => {
+            const isCompleted = userCompletedLessons.includes(lesson.id);
+            const isLocked = false;
+            
+            return (
+              <div key={lesson.id} className={`bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden hover:shadow-md transition-shadow ${isLocked ? 'opacity-60' : ''}`}>
+                <div className="p-6">
+                  <div className="flex items-start justify-between mb-4">
+                    <div className={`w-12 h-12 bg-gradient-to-r ${getCategoryColor(lesson.category || '')} rounded-xl flex items-center justify-center`}>
+                      {React.createElement(getCategoryIcon(lesson.category || ''), { className: "w-6 h-6 text-white" })}
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      {isCompleted && (
+                        <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center">
+                          <CheckCircle className="w-4 h-4 text-white" />
+                        </div>
+                      )}
+                      {isLocked && (
+                        <div className="w-6 h-6 bg-gray-400 rounded-full flex items-center justify-center">
+                          <Lock className="w-4 h-4 text-white" />
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">{lesson.title || 'Untitled Lesson'}</h3>
+                  <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">{lesson.description || 'No description available'}</p>
+
+                  <div className="flex items-center justify-between mb-4">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getDifficultyColor(lesson.difficulty || 'Beginner')}`}>
+                      {lesson.difficulty || 'Beginner'}
+                    </span>
+                    <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
+                      <Clock className="w-4 h-4" />
+                      <span>{lesson.duration || 0} min</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-1">
+                      <Star className="w-4 h-4 text-yellow-400 fill-current" />
+                      <span className="text-sm text-gray-600 dark:text-gray-400">{lesson.rating || 0}</span>
+                    </div>
+                    <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
+                      <Users className="w-4 h-4" />
+                      <span>{lesson.students || 0}</span>
+                    </div>
+                  </div>
+
+                  <div className="mb-4">
+                    <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
+                      <Trophy className="w-4 h-4" />
+                      <span>+{lesson.xpReward || 0} XP</span>
+                    </div>
+                  </div>
+
+                  {!isLocked ? (
+                    <Link
+                      to={`/lessons/${lesson.id}`}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <Play className="w-4 h-4" />
+                      <span>{isCompleted ? 'Review' : 'Start Lesson'}</span>
+                    </Link>
+                  ) : (
+                    <button
+                      disabled
+                      className="w-full bg-gray-300 dark:bg-gray-600 text-gray-500 dark:text-gray-400 py-2 px-4 rounded-lg font-medium cursor-not-allowed flex items-center justify-center space-x-2"
+                    >
+                      <Lock className="w-4 h-4" />
+                      <span>Complete previous lessons</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {filteredLessons.length === 0 && (
+        <div className="col-span-full text-center py-12">
+          <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No lessons found</h3>
+          <p className="text-gray-600 dark:text-gray-400">Try adjusting your search or filter criteria.</p>
+        </div>
+      )}
     </div>
   );
 };
