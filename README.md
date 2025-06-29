@@ -11,4 +11,6 @@
 - Programming
 - CAD
 
-*Created with React & Firebase*
+-----
+
+*Created with Vite, Typescript, Tailwind, & Firebase*
