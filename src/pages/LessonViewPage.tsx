@@ -31,8 +31,9 @@ const LessonViewPage: React.FC = () => {
   const [progress, setProgress] = useState<LessonProgress | null>(null);
   const [currentSection, setCurrentSection] = useState(0);
   const [isQuizMode, setIsQuizMode] = useState(false);
-  const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
-  const [showResult, setShowResult] = useState(false);
+  const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
+  const [showResults, setShowResults] = useState(false);
   const [quizScore, setQuizScore] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +69,7 @@ const LessonViewPage: React.FC = () => {
         // Check if quiz is completed
         if (progressData?.quizCompleted) {
           setIsQuizMode(true);
-          setShowResult(true);
+          setShowResults(true);
           setQuizScore(progressData.quizScore);
         }
 
@@ -102,7 +103,23 @@ const LessonViewPage: React.FC = () => {
       
       // Update local progress
       setProgress(prev => {
-        if (!prev) return null;
+        if (!prev) {
+          return {
+            id: `${user.id}_${lesson.id}`,
+            userId: user.id,
+            lessonId: lesson.id,
+            sectionsCompleted: [currentSection],
+            quizCompleted: false,
+            quizScore: 0,
+            timeSpent: currentTime,
+            completed: false,
+            completedAt: null,
+            lastAccessed: new Date(),
+            createdAt: new Date(),
+            updatedAt: new Date()
+          };
+        }
+        
         const newSections = [...prev.sectionsCompleted];
         if (!newSections.includes(currentSection)) {
           newSections.push(currentSection);
@@ -116,13 +133,35 @@ const LessonViewPage: React.FC = () => {
   };
 
   const handleQuizAnswer = (answerIndex: number) => {
-    setSelectedAnswer(answerIndex);
-    setShowResult(true);
+    if (!lesson?.quiz.questions[currentQuestionIndex]) return;
     
-    if (lesson?.quiz.questions[0] && answerIndex === lesson.quiz.questions[0].correctAnswer) {
-      setQuizScore(1);
+    const newAnswers = [...selectedAnswers];
+    newAnswers[currentQuestionIndex] = answerIndex;
+    setSelectedAnswers(newAnswers);
+  };
+
+  const handleNextQuestion = () => {
+    if (!lesson) return;
+    
+    if (currentQuestionIndex < lesson.quiz.questions.length - 1) {
+      setCurrentQuestionIndex(currentQuestionIndex + 1);
     } else {
-      setQuizScore(0);
+      // Calculate final score
+      let correctAnswers = 0;
+      lesson.quiz.questions.forEach((question, index) => {
+        if (selectedAnswers[index] === question.correctAnswer) {
+          correctAnswers++;
+        }
+      });
+      
+      setQuizScore(correctAnswers);
+      setShowResults(true);
+    }
+  };
+
+  const handlePreviousQuestion = () => {
+    if (currentQuestionIndex > 0) {
+      setCurrentQuestionIndex(currentQuestionIndex - 1);
     }
   };
 
@@ -166,6 +205,13 @@ const LessonViewPage: React.FC = () => {
       console.error('Error completing lesson:', err);
       setError('Failed to complete lesson');
     }
+  };
+
+  const resetQuiz = () => {
+    setCurrentQuestionIndex(0);
+    setSelectedAnswers([]);
+    setShowResults(false);
+    setQuizScore(0);
   };
 
   if (isLoading) {
@@ -213,8 +259,12 @@ const LessonViewPage: React.FC = () => {
   const totalSections = lesson.sections.length;
   const completedSections = progress?.sectionsCompleted.length || 0;
   const overallProgress = isQuizMode 
-    ? 100 
+    ? showResults ? 100 : 90
     : Math.round(((currentSection + 1) / (totalSections + 1)) * 100);
+
+  const currentQuestion = lesson.quiz.questions[currentQuestionIndex];
+  const isQuizComplete = showResults;
+  const passingGrade = Math.ceil(lesson.quiz.questions.length * 0.7);
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -238,6 +288,10 @@ const LessonViewPage: React.FC = () => {
               <div className="flex items-center space-x-1">
                 <Clock className="w-4 h-4" />
                 <span>{lesson.duration} min</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <Trophy className="w-4 h-4" />
+                <span>+{lesson.xpReward} XP</span>
               </div>
               <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                 lesson.difficulty === 'Beginner' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
@@ -271,8 +325,9 @@ const LessonViewPage: React.FC = () => {
                 onClick={() => {
                   setCurrentSection(index);
                   setIsQuizMode(false);
-                  setShowResult(false);
-                  setSelectedAnswer(null);
+                  setShowResults(false);
+                  setCurrentQuestionIndex(0);
+                  setSelectedAnswers([]);
                 }}
                 className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
                   currentSection === index && !isQuizMode
@@ -289,7 +344,11 @@ const LessonViewPage: React.FC = () => {
             <button
               onClick={() => {
                 setIsQuizMode(true);
-                setShowResult(progress?.quizCompleted || false);
+                setCurrentQuestionIndex(0);
+                if (!progress?.quizCompleted) {
+                  setShowResults(false);
+                  setSelectedAnswers([]);
+                }
               }}
               className={`px-3 py-1 rounded-full text-sm font-medium whitespace-nowrap ${
                 isQuizMode
@@ -300,7 +359,7 @@ const LessonViewPage: React.FC = () => {
               }`}
             >
               {progress?.quizCompleted && <CheckCircle className="w-3 h-3 inline mr-1" />}
-              Quiz
+              Quiz ({lesson.quiz.questions.length} questions)
             </button>
           </div>
         </div>
@@ -325,9 +384,9 @@ const LessonViewPage: React.FC = () => {
                   const lines = paragraph.split('\n');
                   return (
                     <div key={index} className="mb-4">
-                      {lines[0] && <p className="mb-2 text-gray-700 dark:text-gray-300">{lines[0]}</p>}
+                      {lines[0] && !lines[0].includes('•') && <p className="mb-2 text-gray-700 dark:text-gray-300">{lines[0]}</p>}
                       <ul className="list-disc list-inside space-y-1 text-gray-700 dark:text-gray-300">
-                        {lines.slice(1).map((line, lineIndex) => 
+                        {lines.map((line, lineIndex) => 
                           line.trim().startsWith('•') && (
                             <li key={lineIndex}>{line.replace('•', '').trim()}</li>
                           )
@@ -347,48 +406,96 @@ const LessonViewPage: React.FC = () => {
           </div>
         ) : (
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Knowledge Check</h2>
-            {lesson.quiz.questions.length > 0 && (
-              <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg mb-6">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
-                  {lesson.quiz.questions[0].question}
-                </h3>
-                <div className="space-y-3">
-                  {lesson.quiz.questions[0].options.map((option, index) => (
-                    <button
-                      key={index}
-                      onClick={() => handleQuizAnswer(index)}
-                      disabled={showResult}
-                      className={`w-full text-left p-3 rounded-lg border transition-colors ${
-                        showResult
-                          ? index === lesson.quiz.questions[0].correctAnswer
-                            ? 'border-green-500 bg-green-50 dark:bg-green-900/20 text-green-800 dark:text-green-300'
-                            : index === selectedAnswer && index !== lesson.quiz.questions[0].correctAnswer
-                            ? 'border-red-500 bg-red-50 dark:bg-red-900/20 text-red-800 dark:text-red-300'
-                            : 'border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-600 dark:text-gray-400'
-                          : selectedAnswer === index
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300'
-                          : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-900 dark:text-white'
-                      }`}
-                    >
-                      <div className="flex items-center">
-                        <span className="mr-3 w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm">
-                          {String.fromCharCode(65 + index)}
-                        </span>
-                        {option}
-                        {showResult && index === lesson.quiz.questions[0].correctAnswer && (
-                          <CheckCircle className="ml-auto w-5 h-5 text-green-600" />
-                        )}
-                      </div>
-                    </button>
-                  ))}
+            {!showResults ? (
+              <div>
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                    Question {currentQuestionIndex + 1} of {lesson.quiz.questions.length}
+                  </h2>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
+                    Quiz Progress: {Math.round(((currentQuestionIndex + 1) / lesson.quiz.questions.length) * 100)}%
+                  </div>
                 </div>
-                {showResult && (
-                  <div className="mt-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                    <h4 className="font-medium text-gray-900 dark:text-white mb-2">Explanation:</h4>
-                    <p className="text-gray-700 dark:text-gray-300">{lesson.quiz.questions[0].explanation}</p>
+                
+                {currentQuestion && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-6 rounded-lg mb-6">
+                    <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                      {currentQuestion.question}
+                    </h3>
+                    <div className="space-y-3">
+                      {currentQuestion.options.map((option, index) => (
+                        <button
+                          key={index}
+                          onClick={() => handleQuizAnswer(index)}
+                          className={`w-full text-left p-3 rounded-lg border transition-colors ${
+                            selectedAnswers[currentQuestionIndex] === index
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-300'
+                              : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-900 dark:text-white'
+                          }`}
+                        >
+                          <div className="flex items-center">
+                            <span className="mr-3 w-6 h-6 rounded-full border-2 flex items-center justify-center text-sm">
+                              {String.fromCharCode(65 + index)}
+                            </span>
+                            {option}
+                          </div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
+              </div>
+            ) : (
+              <div>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-6">Quiz Results</h2>
+                <div className="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 p-6 rounded-lg mb-6">
+                  <div className="text-center">
+                    <div className="text-4xl font-bold text-gray-900 dark:text-white mb-2">
+                      {quizScore}/{lesson.quiz.questions.length}
+                    </div>
+                    <div className="text-lg text-gray-600 dark:text-gray-400 mb-4">
+                      {Math.round((quizScore / lesson.quiz.questions.length) * 100)}% Correct
+                    </div>
+                    <div className={`text-lg font-semibold ${
+                      quizScore >= passingGrade 
+                        ? 'text-green-600 dark:text-green-400' 
+                        : 'text-red-600 dark:text-red-400'
+                    }`}>
+                      {quizScore >= passingGrade ? '🎉 Passed!' : '❌ Try Again'}
+                    </div>
+                    {quizScore < passingGrade && (
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">
+                        You need {passingGrade} correct answers to pass.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Question Review */}
+                <div className="space-y-4">
+                  {lesson.quiz.questions.map((question, index) => (
+                    <div key={index} className="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+                      <h4 className="font-medium text-gray-900 dark:text-white mb-2">
+                        {index + 1}. {question.question}
+                      </h4>
+                      <div className="text-sm">
+                        <div className={`mb-1 ${
+                          selectedAnswers[index] === question.correctAnswer 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : 'text-red-600 dark:text-red-400'
+                        }`}>
+                          Your answer: {question.options[selectedAnswers[index]] || 'Not answered'}
+                        </div>
+                        <div className="text-green-600 dark:text-green-400 mb-2">
+                          Correct answer: {question.options[question.correctAnswer]}
+                        </div>
+                        <div className="text-gray-600 dark:text-gray-400">
+                          {question.explanation}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -399,11 +506,17 @@ const LessonViewPage: React.FC = () => {
       <div className="flex justify-between items-center">
         <button
           onClick={() => {
-            if (isQuizMode) {
+            if (isQuizMode && !showResults && currentQuestionIndex > 0) {
+              handlePreviousQuestion();
+            } else if (isQuizMode && showResults) {
               setIsQuizMode(false);
               setCurrentSection(lesson.sections.length - 1);
-              setShowResult(false);
-              setSelectedAnswer(null);
+              setShowResults(false);
+              setCurrentQuestionIndex(0);
+              setSelectedAnswers([]);
+            } else if (isQuizMode) {
+              setIsQuizMode(false);
+              setCurrentSection(lesson.sections.length - 1);
             } else if (currentSection > 0) {
               setCurrentSection(currentSection - 1);
             }
@@ -418,7 +531,12 @@ const LessonViewPage: React.FC = () => {
         <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
           <BookOpen className="w-4 h-4" />
           <span>
-            {isQuizMode ? 'Quiz' : `Section ${currentSection + 1} of ${lesson.sections.length}`}
+            {isQuizMode 
+              ? showResults 
+                ? 'Quiz Complete' 
+                : `Question ${currentQuestionIndex + 1}/${lesson.quiz.questions.length}`
+              : `Section ${currentSection + 1} of ${lesson.sections.length}`
+            }
           </span>
         </div>
 
@@ -438,20 +556,43 @@ const LessonViewPage: React.FC = () => {
             onClick={() => {
               handleSectionComplete();
               setIsQuizMode(true);
+              setCurrentQuestionIndex(0);
+              setSelectedAnswers([]);
+              setShowResults(false);
             }}
             className="flex items-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
           >
             <span>Take Quiz</span>
             <Trophy className="w-4 h-4" />
           </button>
-        ) : isQuizMode && showResult ? (
+        ) : isQuizMode && !showResults ? (
           <button
-            onClick={completeLesson}
-            className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            onClick={handleNextQuestion}
+            disabled={selectedAnswers[currentQuestionIndex] === undefined}
+            className="flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <span>Complete Lesson</span>
-            <Star className="w-4 h-4" />
+            <span>{currentQuestionIndex === lesson.quiz.questions.length - 1 ? 'Finish Quiz' : 'Next Question'}</span>
+            <ArrowLeft className="w-4 h-4 rotate-180" />
           </button>
+        ) : isQuizMode && showResults ? (
+          <div className="flex space-x-2">
+            {quizScore < passingGrade && (
+              <button
+                onClick={resetQuiz}
+                className="flex items-center space-x-2 px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
+              >
+                <RotateCcw className="w-4 h-4" />
+                <span>Retake Quiz</span>
+              </button>
+            )}
+            <button
+              onClick={completeLesson}
+              className="flex items-center space-x-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <span>{quizScore >= passingGrade ? 'Complete Lesson' : 'Continue Anyway'}</span>
+              <Star className="w-4 h-4" />
+            </button>
+          </div>
         ) : (
           <div></div>
         )}

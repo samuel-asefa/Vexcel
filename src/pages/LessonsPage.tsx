@@ -115,6 +115,7 @@ const LessonsPage: React.FC = () => {
 
   const userCompletedLessons = user?.completedLessons || [];
   const totalLessons = lessons?.length || 0;
+  const completionPercentage = totalLessons > 0 ? Math.round((userCompletedLessons.length / totalLessons) * 100) : 0;
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -144,17 +145,21 @@ const LessonsPage: React.FC = () => {
               <div className="text-2xl font-bold">{(user?.xp || 0).toLocaleString()}</div>
               <div className="text-sm text-blue-200">XP</div>
             </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold">{completionPercentage}%</div>
+              <div className="text-sm text-blue-200">Complete</div>
+            </div>
           </div>
         </div>
         <div className="mt-4">
           <div className="flex justify-between text-sm text-blue-200 mb-1">
             <span>Overall Progress</span>
-            <span>{totalLessons > 0 ? Math.round((userCompletedLessons.length / totalLessons) * 100) : 0}%</span>
+            <span>{completionPercentage}%</span>
           </div>
           <div className="w-full bg-blue-400 bg-opacity-30 rounded-full h-2">
             <div 
-              className="bg-white h-2 rounded-full" 
-              style={{ width: `${totalLessons > 0 ? (userCompletedLessons.length / totalLessons) * 100 : 0}%` }}
+              className="bg-white h-2 rounded-full transition-all duration-500" 
+              style={{ width: `${completionPercentage}%` }}
             ></div>
           </div>
         </div>
@@ -250,6 +255,13 @@ const LessonsPage: React.FC = () => {
                   <div className="flex items-center space-x-1 text-sm text-gray-500 dark:text-gray-400">
                     <Users className="w-4 h-4" />
                     <span>{lesson.students || 0}</span>
+                  </div>
+                </div>
+
+                <div className="mb-4">
+                  <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-1">
+                    <Trophy className="w-4 h-4" />
+                    <span>+{lesson.xpReward || 0} XP</span>
                   </div>
                 </div>
 

@@ -70,11 +70,11 @@ const TeamsPage: React.FC = () => {
 
         // Fetch leaderboard
         const leaderboardData = await getTeamLeaderboard(10);
-        setLeaderboard(leaderboardData);
+        setLeaderboard(leaderboardData || []);
 
         // Fetch available teams
         const availableTeamsData = await getAvailableTeams();
-        setAvailableTeams(availableTeamsData.filter(team => team.id !== user.teamId));
+        setAvailableTeams((availableTeamsData || []).filter(team => team.id !== user.teamId));
 
       } catch (err: any) {
         console.error('Error fetching teams data:', err);
@@ -99,11 +99,11 @@ const TeamsPage: React.FC = () => {
         throw new Error('Team not found with that code');
       }
 
-      if (team.memberIds.length >= team.maxMembers) {
+      if ((team.memberIds || []).length >= team.maxMembers) {
         throw new Error('Team is full');
       }
 
-      if (team.memberIds.includes(user.id)) {
+      if ((team.memberIds || []).includes(user.id)) {
         throw new Error('You are already a member of this team');
       }
 
@@ -137,7 +137,7 @@ const TeamsPage: React.FC = () => {
         throw new Error('Team not found');
       }
 
-      if (team.memberIds.length >= team.maxMembers) {
+      if ((team.memberIds || []).length >= team.maxMembers) {
         throw new Error('Team is full');
       }
 
@@ -192,7 +192,7 @@ const TeamsPage: React.FC = () => {
       setIsJoining(true);
       setError(null);
 
-      const teamCode = `VRC${createTeamData.name.toUpperCase()}`;
+      const teamCode = `VRC${createTeamData.name.toUpperCase().replace(/\s+/g, '')}`;
       
       const newTeam: Omit<Team, 'id'> = {
         name: createTeamData.name.trim(),
@@ -200,9 +200,9 @@ const TeamsPage: React.FC = () => {
         captainId: user.id,
         memberIds: [user.id],
         stats: {
-          totalXP: user.xp,
-          avgLevel: user.level,
-          totalLessons: user.completedLessons.length,
+          totalXP: user.xp || 0,
+          avgLevel: user.level || 1,
+          totalLessons: (user.completedLessons || []).length,
           rank: 0
         },
         isPrivate: createTeamData.isPrivate,
@@ -238,6 +238,20 @@ const TeamsPage: React.FC = () => {
     if (rank === 2) return '🥈';
     if (rank === 3) return '🥉';
     return `#${rank}`;
+  };
+
+  // Calculate team stats dynamically
+  const calculateTeamStats = (team: Team, members: User[]) => {
+    const totalXP = members.reduce((sum, member) => sum + (member.xp || 0), 0);
+    const avgLevel = members.length > 0 ? members.reduce((sum, member) => sum + (member.level || 1), 0) / members.length : 1;
+    const totalLessons = members.reduce((sum, member) => sum + (member.completedLessons || []).length, 0);
+    
+    return {
+      totalXP,
+      avgLevel: Math.round(avgLevel * 10) / 10,
+      totalLessons,
+      memberCount: members.length
+    };
   };
 
   if (isLoading) {
@@ -329,28 +343,34 @@ const TeamsPage: React.FC = () => {
                     <p className="text-blue-100">Team Code: {myTeam.code}</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-4xl font-bold">{getRankIcon(myTeam.stats.rank || 0)}</div>
+                    <div className="text-4xl font-bold">{getRankIcon(myTeam.stats?.rank || 0)}</div>
                     <div className="text-sm text-blue-200">Team Rank</div>
                   </div>
                 </div>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold">{myTeam.stats.totalXP.toLocaleString()}</div>
-                    <div className="text-sm text-blue-200">Total XP</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold">{myTeam.stats.avgLevel.toFixed(1)}</div>
-                    <div className="text-sm text-blue-200">Avg Level</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold">{myTeam.stats.totalLessons}</div>
-                    <div className="text-sm text-blue-200">Lessons Done</div>
-                  </div>
-                  <div className="text-center">
-                    <div className="text-3xl font-bold">{teamMembers.length}</div>
-                    <div className="text-sm text-blue-200">Members</div>
-                  </div>
-                </div>
+                
+                {(() => {
+                  const stats = calculateTeamStats(myTeam, teamMembers);
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+                      <div className="text-center">
+                        <div className="text-3xl font-bold">{stats.totalXP.toLocaleString()}</div>
+                        <div className="text-sm text-blue-200">Total XP</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold">{stats.avgLevel}</div>
+                        <div className="text-sm text-blue-200">Avg Level</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold">{stats.totalLessons}</div>
+                        <div className="text-sm text-blue-200">Lessons Done</div>
+                      </div>
+                      <div className="text-center">
+                        <div className="text-3xl font-bold">{stats.memberCount}</div>
+                        <div className="text-sm text-blue-200">Members</div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* Captain */}
@@ -359,21 +379,30 @@ const TeamsPage: React.FC = () => {
                   <Crown className="w-6 h-6 text-yellow-500 mr-2" />
                   Team Captain
                 </h3>
-                {teamMembers.find(member => member.id === myTeam.captainId) && (
-                  <div className="flex items-center space-x-4">
-                    <img
-                      src={teamMembers.find(member => member.id === myTeam.captainId)?.avatar}
-                      alt="Captain"
-                      className="w-16 h-16 rounded-full object-cover ring-4 ring-yellow-500/20"
-                    />
-                    <div>
-                      <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {teamMembers.find(member => member.id === myTeam.captainId)?.name}
-                      </h4>
-                      <p className="text-gray-600 dark:text-gray-400">Team Captain & Mentor</p>
+                {(() => {
+                  const captain = teamMembers.find(member => member.id === myTeam.captainId);
+                  return captain ? (
+                    <div className="flex items-center space-x-4">
+                      <img
+                        src={captain.avatar}
+                        alt="Captain"
+                        className="w-16 h-16 rounded-full object-cover ring-4 ring-yellow-500/20"
+                      />
+                      <div>
+                        <h4 className="text-lg font-semibold text-gray-900 dark:text-white">
+                          {captain.name}
+                        </h4>
+                        <p className="text-gray-600 dark:text-gray-400">Team Captain & Mentor</p>
+                        <div className="flex items-center space-x-3 text-sm text-gray-500 dark:text-gray-400 mt-1">
+                          <span>Level {captain.level}</span>
+                          <span>{captain.xp.toLocaleString()} XP</span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <p className="text-gray-600 dark:text-gray-400">Captain information not available</p>
+                  );
+                })()}
               </div>
 
               {/* Team Members */}
@@ -407,21 +436,25 @@ const TeamsPage: React.FC = () => {
                             )}
                           </h4>
                           <div className="flex items-center space-x-4 text-sm text-gray-600 dark:text-gray-400">
-                            <span>Level {member.level}</span>
-                            <span>{member.xp.toLocaleString()} XP</span>
-                            <span>{member.completedLessons.length} lessons</span>
+                            <span>Level {member.level || 1}</span>
+                            <span>{(member.xp || 0).toLocaleString()} XP</span>
+                            <span>{(member.completedLessons || []).length} lessons</span>
                           </div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-3">
                         <div className="text-right">
-                          <div className="text-sm font-medium text-gray-900 dark:text-white">Progress</div>
-                          <div className="text-xs text-gray-600 dark:text-gray-400">This week</div>
+                          <div className="text-sm font-medium text-gray-900 dark:text-white">
+                            {Math.round(((member.completedLessons || []).length / Math.max(teamMembers.reduce((max, m) => Math.max(max, (m.completedLessons || []).length), 1), 1)) * 100)}%
+                          </div>
+                          <div className="text-xs text-gray-600 dark:text-gray-400">Progress</div>
                         </div>
                         <div className="w-16 h-2 bg-gray-200 dark:bg-gray-600 rounded-full">
                           <div 
                             className="h-2 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-500" 
-                            style={{ width: `${Math.min((member.completedLessons.length / 12) * 100, 100)}%` }}
+                            style={{ 
+                              width: `${Math.round(((member.completedLessons || []).length / Math.max(teamMembers.reduce((max, m) => Math.max(max, (m.completedLessons || []).length), 1), 1)) * 100)}%` 
+                            }}
                           ></div>
                         </div>
                       </div>
@@ -467,13 +500,17 @@ const TeamsPage: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-gray-900 dark:text-white text-lg">Team {team.name}</h4>
                     <p className="text-sm text-gray-600 dark:text-gray-400">
-                      {team.memberIds.length} members
+                      {(team.memberIds || []).length} members
                     </p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold text-gray-900 dark:text-white text-lg">{team.stats.totalXP.toLocaleString()} XP</div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">Avg Level: {team.stats.avgLevel.toFixed(1)}</div>
+                  <div className="font-bold text-gray-900 dark:text-white text-lg">
+                    {(team.stats?.totalXP || 0).toLocaleString()} XP
+                  </div>
+                  <div className="text-sm text-gray-600 dark:text-gray-400">
+                    Avg Level: {(team.stats?.avgLevel || 1).toFixed(1)}
+                  </div>
                 </div>
               </div>
             )) : (
@@ -519,20 +556,23 @@ const TeamsPage: React.FC = () => {
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <h4 className="font-bold text-gray-900 dark:text-white mb-2">Team {team.name}</h4>
-                      <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">{team.description || 'No description available'}</p>
+                      <p className="text-gray-600 dark:text-gray-400 text-sm mb-3">
+                        {team.description || 'No description available'}
+                      </p>
                       <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
                         <span>
-                          {team.memberIds.length}/{team.maxMembers} members
+                          {(team.memberIds || []).length}/{team.maxMembers} members
                         </span>
                         <span>Code: {team.code}</span>
+                        <span>{(team.stats?.totalXP || 0).toLocaleString()} XP</span>
                       </div>
                     </div>
                     <button 
                       onClick={() => handleJoinTeam(team.id)}
-                      disabled={isJoining || team.memberIds.length >= team.maxMembers}
+                      disabled={isJoining || (team.memberIds || []).length >= team.maxMembers}
                       className="px-4 py-2 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg hover:from-green-700 hover:to-emerald-700 font-semibold transition-all duration-200 shadow-lg hover:shadow-xl disabled:opacity-50"
                     >
-                      {team.memberIds.length >= team.maxMembers ? 'Full' : isJoining ? 'Joining...' : 'Join'}
+                      {(team.memberIds || []).length >= team.maxMembers ? 'Full' : isJoining ? 'Joining...' : 'Join'}
                     </button>
                   </div>
                 </div>
