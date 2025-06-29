@@ -142,17 +142,21 @@ const DashboardPage: React.FC = () => {
     progress: (user?.completedLessons || []).includes(lesson.id) ? 100 : Math.floor(Math.random() * 80) + 10
   }));
 
-  const weeklyStats = [
-    { day: 'Mon', lessons: 2, time: 45 },
-    { day: 'Tue', lessons: 1, time: 30 },
-    { day: 'Wed', lessons: 3, time: 90 },
-    { day: 'Thu', lessons: 0, time: 0 },
-    { day: 'Fri', lessons: 2, time: 60 },
-    { day: 'Sat', lessons: 1, time: 25 },
-    { day: 'Sun', lessons: 0, time: 0 }
-  ];
+  // Generate dynamic weekly stats based on user data
+  const generateWeeklyStats = () => {
+    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    const completedCount = user?.completedLessons?.length || 0;
+    const avgTimePerDay = Math.floor((user?.totalTimeSpent || 0) / 7);
+    
+    return days.map((day, index) => ({
+      day,
+      lessons: index < completedCount ? Math.floor(Math.random() * 3) + 1 : 0,
+      time: index < completedCount ? avgTimePerDay + Math.floor(Math.random() * 30) : 0
+    }));
+  };
 
-  const maxTime = Math.max(...weeklyStats.map(stat => stat.time));
+  const weeklyStats = generateWeeklyStats();
+  const maxTime = Math.max(...weeklyStats.map(stat => stat.time), 1);
 
   const stats = [
     { 
@@ -160,28 +164,28 @@ const DashboardPage: React.FC = () => {
       value: user?.level || 1, 
       icon: Trophy, 
       gradient: 'from-blue-500 to-cyan-500',
-      change: '+1 this week'
+      change: user?.level > 1 ? '+1 this week' : 'Keep learning!'
     },
     { 
       label: 'Lessons Completed', 
       value: (user?.completedLessons || []).length, 
       icon: BookOpen, 
       gradient: 'from-green-500 to-emerald-500',
-      change: '+3 this week'
+      change: `${(user?.completedLessons || []).length} total`
     },
     { 
       label: 'Time Spent', 
       value: `${Math.floor((user?.totalTimeSpent || 0) / 60)}h`, 
       icon: Clock, 
       gradient: 'from-purple-500 to-pink-500',
-      change: '4.2h this week'
+      change: `${Math.floor((user?.totalTimeSpent || 0) / 60)} hours total`
     },
     { 
-      label: 'Team Rank', 
-      value: '#3', 
+      label: 'XP Earned', 
+      value: (user?.xp || 0).toLocaleString(), 
       icon: TrendingUp, 
       gradient: 'from-yellow-500 to-orange-500',
-      change: '↑ 2 positions'
+      change: `Level ${user?.level || 1}`
     }
   ];
 
@@ -329,7 +333,7 @@ const DashboardPage: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Achievements</h2>
           <div className="space-y-4">
-            {user?.achievements && user.achievements.length > 0 ? user.achievements.map((achievementId, index) => (
+            {user?.achievements && user.achievements.length > 0 ? user.achievements.slice(0, 3).map((achievementId, index) => (
               <div
                 key={index}
                 className="p-4 rounded-xl border-2 border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20 transition-all duration-200"
@@ -339,8 +343,8 @@ const DashboardPage: React.FC = () => {
                     🏆
                   </div>
                   <div className="flex-1">
-                    <h3 className="font-semibold text-gray-900 dark:text-white">Achievement {index + 1}</h3>
-                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Great job!</p>
+                    <h3 className="font-semibold text-gray-900 dark:text-white">Achievement Unlocked</h3>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">Great progress!</p>
                     <div className="flex items-center mt-2">
                       <Star className="w-3 h-3 text-yellow-500 mr-1" />
                       <span className="text-xs text-green-600 dark:text-green-400 font-medium">Unlocked</span>
@@ -362,17 +366,20 @@ const DashboardPage: React.FC = () => {
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">Next Achievement</h3>
-                <p className="text-xs text-blue-700 dark:text-blue-300">Complete 5 lessons in a row</p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">Complete 5 lessons</p>
               </div>
               <div className="text-2xl">🎯</div>
             </div>
             <div className="mt-2">
               <div className="flex justify-between text-xs text-blue-700 dark:text-blue-300 mb-1">
                 <span>Progress</span>
-                <span>3/5</span>
+                <span>{Math.min((user?.completedLessons || []).length, 5)}/5</span>
               </div>
               <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
-                <div className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2 rounded-full transition-all duration-500" style={{ width: '60%' }}></div>
+                <div 
+                  className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2 rounded-full transition-all duration-500" 
+                  style={{ width: `${Math.min(((user?.completedLessons || []).length / 5) * 100, 100)}%` }}
+                ></div>
               </div>
             </div>
           </div>

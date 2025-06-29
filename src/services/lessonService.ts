@@ -67,8 +67,38 @@ const getDefaultLessons = (): Lesson[] => {
         {
           id: 'section-1',
           title: 'What is VEX Robotics?',
-          content: 'VEX Robotics is an educational robotics platform designed to provide students with hands-on experience in STEM fields...',
+          content: `VEX Robotics is an educational robotics platform designed to provide students with hands-on experience in STEM fields. The VEX system uses metal and plastic components that can be assembled into various robot configurations.
+
+Key benefits of VEX Robotics include:
+• Develops problem-solving skills
+• Teaches engineering principles
+• Builds teamwork and collaboration
+• Prepares students for real-world challenges
+
+The VEX system is used in classrooms and competitions worldwide, making it one of the most popular educational robotics platforms available today.`,
           order: 1
+        },
+        {
+          id: 'section-2',
+          title: 'VEX Components Overview',
+          content: `Understanding the basic components of VEX robotics is essential for building successful robots. Here are the main categories:
+
+**Structural Components:**
+• Metal beams and angles for the robot frame
+• Plastic connectors and joints
+• Wheels and gears for movement
+
+**Electronic Components:**
+• VEX Brain (the main control unit)
+• Motors for movement and manipulation
+• Sensors for environmental awareness
+• Cables for connections
+
+**Tools:**
+• Hex keys for assembly
+• Screws and fasteners
+• VEXcode software for programming`,
+          order: 2
         }
       ],
       quiz: {
@@ -102,7 +132,16 @@ const getDefaultLessons = (): Lesson[] => {
         {
           id: 'section-1',
           title: 'Introduction to VEXcode',
-          content: 'VEXcode is the programming environment used to control VEX robots...',
+          content: `VEXcode is the programming environment used to control VEX robots. It provides a user-friendly interface for both block-based and text-based programming.
+
+**Key Features:**
+• Drag-and-drop block programming
+• Text-based programming in C++
+• Built-in help and tutorials
+• Device configuration tools
+• Real-time debugging
+
+VEXcode makes it easy for beginners to start programming while providing advanced features for experienced programmers.`,
           order: 1
         }
       ],
@@ -137,7 +176,17 @@ const getDefaultLessons = (): Lesson[] => {
         {
           id: 'section-1',
           title: 'Types of VEX Sensors',
-          content: 'VEX robots can use various sensors to interact with their environment...',
+          content: `VEX robots can use various sensors to interact with their environment. Understanding these sensors is crucial for building intelligent robots.
+
+**Common VEX Sensors:**
+• Bumper Switch - Detects physical contact
+• Ultrasonic Sensor - Measures distance
+• Gyro Sensor - Detects rotation and orientation
+• Vision Sensor - Recognizes colors and objects
+• Line Tracker - Follows lines on the ground
+• Light Sensor - Detects light levels
+
+Each sensor has specific use cases and programming requirements.`,
           order: 1
         }
       ],
@@ -172,7 +221,19 @@ const getDefaultLessons = (): Lesson[] => {
         {
           id: 'section-1',
           title: 'Competition Basics',
-          content: 'Understanding VEX competition formats and rules...',
+          content: `Understanding VEX competition formats and rules is essential for success. VEX competitions test both technical skills and strategic thinking.
+
+**Competition Elements:**
+• Autonomous Period - Robot operates independently
+• Driver Control - Human operators control the robot
+• Skills Challenges - Specialized scoring opportunities
+• Alliance Play - Teams work together
+
+**Key Success Factors:**
+• Reliable robot design
+• Consistent autonomous routines
+• Effective driver practice
+• Strategic alliance selection`,
           order: 1
         }
       ],
@@ -207,7 +268,25 @@ const getDefaultLessons = (): Lesson[] => {
         {
           id: 'section-1',
           title: 'Autonomous Basics',
-          content: 'Introduction to autonomous programming concepts...',
+          content: `Autonomous programming allows robots to operate without human control. This is crucial for VEX competitions where robots must perform tasks independently.
+
+**Key Concepts:**
+• Sensor feedback loops
+• Path planning algorithms
+• Error correction and recovery
+• Timing and coordination
+
+**Programming Strategies:**
+• Start with simple movements
+• Add sensor feedback gradually
+• Test extensively in competition conditions
+• Plan for multiple scenarios
+
+**Common Challenges:**
+• Sensor noise and calibration
+• Environmental variations
+• Battery voltage changes
+• Mechanical wear and tear`,
           order: 1
         }
       ],

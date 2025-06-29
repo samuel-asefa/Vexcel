@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { mockAchievements } from '../data/mockData';
 import { 
   User, 
   Trophy, 
@@ -35,8 +34,57 @@ const ProfilePage: React.FC = () => {
   const recentActivity = [
     { type: 'lesson', title: 'Completed "Advanced Sensor Programming"', date: '2 hours ago', icon: BookOpen, color: 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400' },
     { type: 'achievement', title: 'Unlocked "Quiz Master" achievement', date: '1 day ago', icon: Award, color: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' },
-    { type: 'level', title: 'Reached Level 12', date: '3 days ago', icon: Trophy, color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' },
-    { type: 'team', title: 'Joined 750W team', date: '1 week ago', icon: User, color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' }
+    { type: 'level', title: `Reached Level ${user.level}`, date: '3 days ago', icon: Trophy, color: 'bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400' },
+    { type: 'team', title: user.teamId ? 'Joined team' : 'No team yet', date: '1 week ago', icon: User, color: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400' }
+  ];
+
+  // Dynamic achievements based on user progress
+  const achievements = [
+    {
+      id: 'first-lesson',
+      title: 'First Steps',
+      description: 'Complete your first VEX lesson',
+      icon: '🎯',
+      color: 'from-blue-500 to-cyan-500',
+      unlocked: user.completedLessons.length > 0,
+      requirement: 'Complete 1 lesson'
+    },
+    {
+      id: 'quiz-master',
+      title: 'Quiz Master',
+      description: 'Complete 5 lessons',
+      icon: '🧠',
+      color: 'from-purple-500 to-pink-500',
+      unlocked: user.completedLessons.length >= 5,
+      requirement: 'Complete 5 lessons'
+    },
+    {
+      id: 'team-player',
+      title: 'Team Player',
+      description: 'Join a VEX team',
+      icon: '👥',
+      color: 'from-green-500 to-emerald-500',
+      unlocked: !!user.teamId,
+      requirement: 'Join any team'
+    },
+    {
+      id: 'level-up',
+      title: 'Level Up',
+      description: 'Reach level 5',
+      icon: '⚡',
+      color: 'from-yellow-500 to-orange-500',
+      unlocked: user.level >= 5,
+      requirement: 'Reach level 5'
+    },
+    {
+      id: 'dedication',
+      title: 'Dedication',
+      description: 'Spend 10+ hours learning',
+      icon: '🔥',
+      color: 'from-red-500 to-pink-500',
+      unlocked: user.totalTimeSpent >= 600, // 10 hours in minutes
+      requirement: 'Spend 10+ hours learning'
+    }
   ];
 
   const handleSave = () => {
@@ -185,7 +233,7 @@ const ProfilePage: React.FC = () => {
         <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 p-6">
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-6">Achievements</h2>
           <div className="space-y-4">
-            {mockAchievements.map((achievement, index) => (
+            {achievements.map((achievement, index) => (
               <div
                 key={index}
                 className={`p-4 rounded-xl border-2 transition-all duration-200 ${
@@ -224,12 +272,17 @@ const ProfilePage: React.FC = () => {
           {/* Next Achievement */}
           <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
             <h3 className="font-semibold text-blue-900 dark:text-blue-100 mb-2">Next Achievement</h3>
-            <p className="text-sm text-blue-700 dark:text-blue-300 mb-3">Speed Learner</p>
-            <div className="text-xs text-blue-600 dark:text-blue-400 mb-2">Complete 3 lessons in one day</div>
+            <p className="text-sm text-blue-700 dark:text-blue-300 mb-3">Master Learner</p>
+            <div className="text-xs text-blue-600 dark:text-blue-400 mb-2">Complete 10 lessons</div>
             <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
-              <div className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2 rounded-full transition-all duration-500" style={{ width: '40%' }}></div>
+              <div 
+                className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2 rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min((user.completedLessons.length / 10) * 100, 100)}%` }}
+              ></div>
             </div>
-            <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">2/3 lessons completed today</div>
+            <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+              {user.completedLessons.length}/10 lessons completed
+            </div>
           </div>
         </div>
       </div>
