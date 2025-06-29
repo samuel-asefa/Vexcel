@@ -128,7 +128,7 @@ const LessonsPage: React.FC = () => {
       </div>
 
       {/* Progress Overview */}
-      <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl p-6 mb-8 text-white">
+      <div className="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-6 mb-8 text-white">
         <div className="flex flex-col md:flex-row items-center justify-between">
           <div>
             <h2 className="text-xl font-semibold mb-2">Your Learning Progress</h2>

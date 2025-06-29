@@ -3,7 +3,6 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { 
-  Zap, 
   BookOpen, 
   Users, 
   Trophy, 
@@ -27,13 +26,13 @@ const HomePage: React.FC = () => {
       icon: BookOpen,
       title: 'Interactive Lessons',
       description: 'Comprehensive VEX robotics curriculum with hands-on activities and real-world applications.',
-      gradient: 'from-blue-500 to-cyan-500'
+      gradient: 'from-blue-600 to-blue-800'
     },
     {
       icon: Users,
       title: 'Team Collaboration',
       description: 'Join teams, track progress, and learn together with captains monitoring your journey.',
-      gradient: 'from-purple-500 to-pink-500'
+      gradient: 'from-indigo-600 to-blue-700'
     },
     {
       icon: Trophy,
@@ -50,8 +49,8 @@ const HomePage: React.FC = () => {
   ];
 
   const stats = [
-    { label: 'Active Students', value: '2,500+', icon: Users, gradient: 'from-blue-500 to-cyan-500' },
-    { label: 'Lessons Available', value: '150+', icon: BookOpen, gradient: 'from-purple-500 to-pink-500' },
+    { label: 'Active Students', value: '2,500+', icon: Users, gradient: 'from-blue-600 to-blue-800' },
+    { label: 'Lessons Available', value: '150+', icon: BookOpen, gradient: 'from-indigo-600 to-blue-700' },
     { label: 'Teams Formed', value: '200+', icon: Trophy, gradient: 'from-yellow-500 to-orange-500' },
     { label: 'Success Rate', value: '94%', icon: TrendingUp, gradient: 'from-green-500 to-emerald-500' }
   ];
@@ -63,7 +62,7 @@ const HomePage: React.FC = () => {
       description: 'Start with VEX basics, components, and fundamental concepts',
       lessons: 12,
       icon: Lightbulb,
-      gradient: 'from-blue-500 to-cyan-500'
+      gradient: 'from-blue-600 to-blue-800'
     },
     {
       step: '02',
@@ -71,7 +70,7 @@ const HomePage: React.FC = () => {
       description: 'Learn VEX coding, sensors, and autonomous programming',
       lessons: 18,
       icon: Code,
-      gradient: 'from-purple-500 to-pink-500'
+      gradient: 'from-indigo-600 to-blue-700'
     },
     {
       step: '03',
@@ -79,7 +78,7 @@ const HomePage: React.FC = () => {
       description: 'Advanced strategies, team coordination, and competition prep',
       lessons: 15,
       icon: Rocket,
-      gradient: 'from-yellow-500 to-orange-500'
+      gradient: 'from-blue-700 to-indigo-800'
     }
   ];
 
@@ -87,12 +86,14 @@ const HomePage: React.FC = () => {
     <div className="bg-white dark:bg-gray-900 min-h-screen">
       {/* Hero Section */}
       <div className="relative overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-cyan-600/10 to-purple-600/10 dark:from-blue-600/20 dark:via-cyan-600/20 dark:to-purple-600/20"></div>
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-600/10 via-blue-700/10 to-indigo-600/10 dark:from-blue-600/20 dark:via-blue-700/20 dark:to-indigo-600/20"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 sm:py-32">
           <div className="text-center">
             <div className="flex justify-center mb-8">
-              <div className="w-20 h-20 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center shadow-2xl animate-pulse">
-                <Zap className="w-10 h-10 text-white" />
+              <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">V</span>
+                </div>
               </div>
             </div>
             <h1 className="text-5xl sm:text-7xl font-bold mb-6">
@@ -100,7 +101,7 @@ const HomePage: React.FC = () => {
                 Master VEX Robotics
               </span>
               <br />
-              <span className="bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+              <span className="bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
                 Like Never Before
               </span>
             </h1>
@@ -112,13 +113,13 @@ const HomePage: React.FC = () => {
               {isAuthenticated ? (
                 <Link
                   to="/dashboard"
-                  className="group bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transform hover:-translate-y-1"
+                  className="group bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transform hover:-translate-y-1"
                 >
                   <span>Go to Dashboard</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </Link>
               ) : (
-                <button className="group bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transform hover:-translate-y-1">
+                <button className="group bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white px-8 py-4 rounded-xl font-semibold transition-all duration-300 flex items-center justify-center space-x-2 shadow-xl hover:shadow-2xl transform hover:-translate-y-1">
                   <span>Start Learning Free</span>
                   <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
                 </button>
@@ -134,7 +135,26 @@ const HomePage: React.FC = () => {
         </div>
       </div>
 
-      
+      {/* Stats Section */}
+      <div className="py-20 bg-gray-50 dark:bg-gray-800/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-8">
+            {stats.map((stat, index) => {
+              const Icon = stat.icon;
+              return (
+                <div key={index} className="text-center group">
+                  <div className={`inline-flex items-center justify-center w-16 h-16 bg-gradient-to-r ${stat.gradient} rounded-2xl mb-4 shadow-lg group-hover:shadow-xl transition-all duration-300 transform group-hover:-translate-y-1`}>
+                    <Icon className="w-8 h-8 text-white" />
+                  </div>
+                  <div className="text-4xl font-bold text-gray-900 dark:text-white mb-2">{stat.value}</div>
+                  <div className="text-gray-600 dark:text-gray-400 font-medium">{stat.label}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       {/* Features Section */}
       <div className="py-24">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -197,7 +217,7 @@ const HomePage: React.FC = () => {
                     </div>
                   </div>
                   {index < 2 && (
-                    <div className="hidden md:block absolute top-1/2 -right-4 w-8 h-8 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center shadow-lg z-10">
+                    <div className="hidden md:block absolute top-1/2 -right-4 w-8 h-8 bg-gradient-to-r from-blue-600 to-blue-800 rounded-full flex items-center justify-center shadow-lg z-10">
                       <ArrowRight className="w-4 h-4 text-white" />
                     </div>
                   )}
@@ -209,7 +229,7 @@ const HomePage: React.FC = () => {
       </div>
 
       {/* CTA Section */}
-      <div className="py-24 bg-gradient-to-r from-blue-600 via-cyan-600 to-purple-600 relative overflow-hidden">
+      <div className="py-24 bg-gradient-to-r from-blue-600 via-blue-700 to-indigo-800 relative overflow-hidden">
         <div className="absolute inset-0 bg-black/10"></div>
         <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h2 className="text-4xl sm:text-5xl font-bold text-white mb-6">

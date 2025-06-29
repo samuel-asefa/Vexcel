@@ -13,7 +13,6 @@ import {
   Target,
   Calendar,
   Award,
-  Zap,
   ArrowRight,
   Play,
   Loader2,
@@ -55,8 +54,13 @@ const DashboardPage: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
-            <Loader2 className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-4" />
-            <p className="text-gray-600 dark:text-gray-400">Loading your dashboard...</p>
+            <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 mx-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
+                <span className="text-white font-bold text-sm">V</span>
+              </div>
+            </div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Loading Vexcel</h2>
+            <p className="text-gray-600 dark:text-gray-400">Setting up your learning environment...</p>
           </div>
         </div>
       </div>
@@ -87,14 +91,16 @@ const DashboardPage: React.FC = () => {
     return (
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
         <div className="text-center">
-          <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <Users className="w-8 h-8 text-white" />
+          <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
+              <span className="text-white font-bold text-sm">V</span>
+            </div>
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome to Vexcel</h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">Please sign in to view your dashboard and start learning VEX robotics.</p>
           <Link 
             to="/" 
-            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-cyan-600 text-white rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-200"
+            className="inline-flex items-center px-6 py-3 bg-gradient-to-r from-blue-600 to-blue-800 text-white rounded-lg hover:from-blue-700 hover:to-blue-900 transition-all duration-200"
           >
             Go to Home Page
           </Link>
@@ -163,7 +169,7 @@ const DashboardPage: React.FC = () => {
       label: 'Current Level', 
       value: user?.level || 1, 
       icon: Trophy, 
-      gradient: 'from-blue-500 to-cyan-500',
+      gradient: 'from-blue-600 to-blue-800',
       change: user?.level > 1 ? '+1 this week' : 'Keep learning!'
     },
     { 
@@ -177,7 +183,7 @@ const DashboardPage: React.FC = () => {
       label: 'Time Spent', 
       value: `${Math.floor((user?.totalTimeSpent || 0) / 60)}h`, 
       icon: Clock, 
-      gradient: 'from-purple-500 to-pink-500',
+      gradient: 'from-indigo-600 to-blue-700',
       change: `${Math.floor((user?.totalTimeSpent || 0) / 60)} hours total`
     },
     { 
@@ -224,7 +230,7 @@ const DashboardPage: React.FC = () => {
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                     <div 
-                      className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-500" 
+                      className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
                       style={{ width: `${((user.xp || 0) % 200) / 200 * 100}%` }}
                     ></div>
                   </div>
@@ -280,7 +286,7 @@ const DashboardPage: React.FC = () => {
                         </div>
                         <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                           <div 
-                            className="bg-gradient-to-r from-blue-500 to-cyan-500 h-2 rounded-full transition-all duration-500" 
+                            className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
                             style={{ width: `${lesson.progress}%` }}
                           ></div>
                         </div>
@@ -288,7 +294,7 @@ const DashboardPage: React.FC = () => {
                     </div>
                     <Link
                       to={`/lessons/${lesson.id}`}
-                      className="ml-4 px-4 py-2 bg-gradient-to-r from-blue-600 to-cyan-600 text-white text-sm font-medium rounded-lg hover:from-blue-700 hover:to-cyan-700 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl"
+                      className="ml-4 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-800 text-white text-sm font-medium rounded-lg hover:from-blue-700 hover:to-blue-900 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl"
                     >
                       <Play className="w-4 h-4" />
                       <span>Continue</span>
@@ -313,7 +319,7 @@ const DashboardPage: React.FC = () => {
                 <div key={index} className="flex-1 flex flex-col items-center">
                   <div className="w-full flex flex-col items-center mb-2">
                     <div 
-                      className="w-8 bg-gradient-to-t from-blue-600 to-cyan-500 rounded-t-lg mb-1 transition-all duration-500"
+                      className="w-8 bg-gradient-to-t from-blue-600 to-blue-800 rounded-t-lg mb-1 transition-all duration-500"
                       style={{ height: `${maxTime > 0 ? (stat.time / maxTime) * 120 : 0}px` }}
                     ></div>
                     <div className="text-xs font-semibold text-gray-900 dark:text-white">{stat.lessons}</div>
@@ -362,7 +368,7 @@ const DashboardPage: React.FC = () => {
           </div>
           
           {/* Next Achievement */}
-          <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 rounded-xl border border-blue-200 dark:border-blue-800">
+          <div className="mt-6 p-4 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 rounded-xl border border-blue-200 dark:border-blue-800">
             <div className="flex items-center justify-between mb-3">
               <div>
                 <h3 className="text-sm font-semibold text-blue-900 dark:text-blue-100">Next Achievement</h3>
@@ -377,7 +383,7 @@ const DashboardPage: React.FC = () => {
               </div>
               <div className="w-full bg-blue-200 dark:bg-blue-800 rounded-full h-2">
                 <div 
-                  className="bg-gradient-to-r from-blue-600 to-cyan-600 h-2 rounded-full transition-all duration-500" 
+                  className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
                   style={{ width: `${Math.min(((user?.completedLessons || []).length / 5) * 100, 100)}%` }}
                 ></div>
               </div>

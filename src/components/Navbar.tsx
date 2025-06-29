@@ -3,7 +3,6 @@ import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { 
-  Zap, 
   Menu, 
   X, 
   Home, 
@@ -22,6 +21,7 @@ const Navbar: React.FC = () => {
   const { isDark, toggleTheme } = useTheme();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [logoError, setLogoError] = useState(false);
 
   const navigation = [
     { name: 'Home', href: '/', icon: Home },
@@ -51,16 +51,31 @@ const Navbar: React.FC = () => {
     }
   };
 
+  const handleLogoError = () => {
+    setLogoError(true);
+  };
+
   return (
     <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50 backdrop-blur-sm bg-opacity-90 dark:bg-opacity-90">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between h-16">
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-3 group">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
-                <Zap className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center group-hover:scale-105 transition-transform">
+                {!logoError ? (
+                  <img 
+                    src="../dist/assets/favicon.png" 
+                    alt="Vexcel Logo" 
+                    className="w-8 h-8 object-contain"
+                    onError={handleLogoError}
+                  />
+                ) : (
+                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-lg flex items-center justify-center">
+                    <span className="text-white font-bold text-sm">V</span>
+                  </div>
+                )}
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-cyan-600 dark:from-blue-400 dark:to-cyan-400 bg-clip-text text-transparent">
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-400 dark:to-blue-600 bg-clip-text text-transparent">
                 Vexcel
               </span>
             </Link>
@@ -102,8 +117,8 @@ const Navbar: React.FC = () => {
               </div>
             ) : isAuthenticated && user ? (
               <div className="flex items-center space-x-3">
-                <div className="hidden md:flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 px-3 py-1.5 rounded-full border border-blue-200 dark:border-blue-800">
-                  <div className="w-6 h-6 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full flex items-center justify-center">
+                <div className="hidden md:flex items-center space-x-2 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 px-3 py-1.5 rounded-full border border-blue-200 dark:border-blue-800">
+                  <div className="w-6 h-6 bg-gradient-to-r from-blue-600 to-blue-800 rounded-full flex items-center justify-center">
                     <span className="text-xs font-bold text-white">{user.level}</span>
                   </div>
                   <span className="text-sm font-medium text-blue-700 dark:text-blue-300">{user.xp} XP</span>
@@ -129,7 +144,7 @@ const Navbar: React.FC = () => {
             ) : (
               <button 
                 onClick={handleLogin}
-                className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
+                className="bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 Sign In with Google
               </button>
@@ -171,7 +186,7 @@ const Navbar: React.FC = () => {
           </div>
           {isAuthenticated && user && (
             <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-800">
-              <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-900/20 dark:to-cyan-900/20 px-3 py-2 rounded-lg">
+              <div className="flex items-center space-x-3 bg-gradient-to-r from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 px-3 py-2 rounded-lg">
                 <img
                   src={user.avatar}
                   alt={user.name}

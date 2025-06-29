@@ -17,8 +17,10 @@ import { Loader2 } from 'lucide-react';
 const LoadingScreen: React.FC = () => (
   <div className="min-h-screen bg-white dark:bg-gray-900 flex items-center justify-center">
     <div className="text-center">
-      <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-2xl flex items-center justify-center mb-4 mx-auto animate-pulse">
-        <Loader2 className="w-8 h-8 text-white animate-spin" />
+      <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 mx-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
+        <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-xl flex items-center justify-center">
+          <span className="text-white font-bold text-sm">V</span>
+        </div>
       </div>
       <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Loading Vexcel</h2>
       <p className="text-gray-600 dark:text-gray-400">Setting up your learning environment...</p>
