@@ -59,46 +59,46 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               console.log('User data loaded successfully:', userData.name);
               setUser(userData);
             } else {
-              console.log('No user data found, creating mock user for development');
-              // Create a mock user for development if no Firestore data
-              const mockUser: User = {
+              console.log('No user data found, user needs to complete profile setup');
+              // Create a basic user profile if none exists
+              const basicUser: User = {
                 id: firebaseUser.uid,
-                name: firebaseUser.displayName || 'Test User',
-                email: firebaseUser.email || 'test@example.com',
-                avatar: firebaseUser.photoURL || 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
+                name: firebaseUser.displayName || 'New User',
+                email: firebaseUser.email || 'user@example.com',
+                avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(firebaseUser.displayName || 'User')}&background=3b82f6&color=fff`,
                 role: 'student',
-                level: 12,
-                xp: 2340,
+                level: 1,
+                xp: 0,
                 teamId: null,
-                completedLessons: ['lesson-1', 'lesson-2', 'lesson-3'],
-                achievements: ['first-lesson', 'quiz-master', 'team-player'],
-                streakDays: 7,
-                totalTimeSpent: 1485,
+                completedLessons: [],
+                achievements: [],
+                streakDays: 0,
+                totalTimeSpent: 0,
                 createdAt: new Date(),
                 lastActive: new Date()
               };
-              setUser(mockUser);
+              setUser(basicUser);
             }
           } catch (firestoreError) {
-            console.warn('Firestore error, using mock data:', firestoreError);
-            // If Firestore fails, use mock data
-            const mockUser: User = {
+            console.warn('Firestore error, creating basic user profile:', firestoreError);
+            // If Firestore fails, create a basic user profile
+            const basicUser: User = {
               id: firebaseUser.uid,
-              name: firebaseUser.displayName || 'Test User',
-              email: firebaseUser.email || 'test@example.com',
-              avatar: firebaseUser.photoURL || 'https://images.pexels.com/photos/2379004/pexels-photo-2379004.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&dpr=2',
+              name: firebaseUser.displayName || 'New User',
+              email: firebaseUser.email || 'user@example.com',
+              avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(firebaseUser.displayName || 'User')}&background=3b82f6&color=fff`,
               role: 'student',
-              level: 12,
-              xp: 2340,
+              level: 1,
+              xp: 0,
               teamId: null,
-              completedLessons: ['lesson-1', 'lesson-2', 'lesson-3'],
-              achievements: ['first-lesson', 'quiz-master', 'team-player'],
-              streakDays: 7,
-              totalTimeSpent: 1485,
+              completedLessons: [],
+              achievements: [],
+              streakDays: 0,
+              totalTimeSpent: 0,
               createdAt: new Date(),
               lastActive: new Date()
             };
-            setUser(mockUser);
+            setUser(basicUser);
           }
         } else {
           console.log('No Firebase user, clearing user data');

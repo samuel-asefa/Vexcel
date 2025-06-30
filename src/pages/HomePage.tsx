@@ -91,9 +91,11 @@ const HomePage: React.FC = () => {
           <div className="text-center">
             <div className="flex justify-center mb-8">
               <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
-                  <span className="text-white font-bold text-xl">V</span>
-                </div>
+                <img 
+                  src="/image copy.png" 
+                  alt="Vexcel Logo" 
+                  className="w-12 h-12 object-contain"
+                />
               </div>
             </div>
             <h1 className="text-5xl sm:text-7xl font-bold mb-6">

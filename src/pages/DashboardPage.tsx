@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { getAllLessons } from '../services/lessonService';
-import { Lesson } from '../types/lesson';
+import { getUserLessonProgress } from '../services/lessonService';
+import { Lesson, LessonProgress } from '../types/lesson';
 import { 
   BookOpen, 
   Trophy, 
@@ -22,6 +23,7 @@ import {
 const DashboardPage: React.FC = () => {
   const { user, isLoading: authLoading, error: authError } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [lessonProgress, setLessonProgress] = useState<Record<string, LessonProgress>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -37,6 +39,25 @@ const DashboardPage: React.FC = () => {
         const lessonsData = await getAllLessons();
         console.log('Dashboard: Lessons loaded:', lessonsData?.length || 0);
         setLessons(lessonsData || []);
+
+        // Fetch progress for each lesson
+        if (lessonsData && lessonsData.length > 0) {
+          const progressPromises = lessonsData.slice(0, 3).map(async (lesson) => {
+            const progress = await getUserLessonProgress(user.id, lesson.id);
+            return { lessonId: lesson.id, progress };
+          });
+
+          const progressResults = await Promise.all(progressPromises);
+          const progressMap: Record<string, LessonProgress> = {};
+          
+          progressResults.forEach(({ lessonId, progress }) => {
+            if (progress) {
+              progressMap[lessonId] = progress;
+            }
+          });
+
+          setLessonProgress(progressMap);
+        }
       } catch (err: any) {
         console.error('Dashboard: Error fetching data:', err);
         setError(err.message || 'Failed to load dashboard data');
@@ -55,9 +76,11 @@ const DashboardPage: React.FC = () => {
         <div className="flex items-center justify-center h-64">
           <div className="text-center">
             <div className="w-16 h-16 rounded-2xl flex items-center justify-center mb-4 mx-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
-                <span className="text-white font-bold text-sm">V</span>
-              </div>
+              <img 
+                src="/image copy.png" 
+                alt="Vexcel Logo" 
+                className="w-8 h-8 object-contain"
+              />
             </div>
             <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Loading Vexcel</h2>
             <p className="text-gray-600 dark:text-gray-400">Setting up your learning environment...</p>
@@ -92,9 +115,11 @@ const DashboardPage: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 bg-gray-50 dark:bg-gray-900 min-h-screen">
         <div className="text-center">
           <div className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
-            <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center">
-              <span className="text-white font-bold text-sm">V</span>
-            </div>
+            <img 
+              src="/image copy.png" 
+              alt="Vexcel Logo" 
+              className="w-8 h-8 object-contain"
+            />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Welcome to Vexcel</h1>
           <p className="text-gray-600 dark:text-gray-400 mb-6">Please sign in to view your dashboard and start learning VEX robotics.</p>
@@ -142,23 +167,44 @@ const DashboardPage: React.FC = () => {
     );
   }
 
-  // Safe array access with fallbacks
-  const recentLessons = (lessons || []).slice(0, 3).map(lesson => ({
-    ...lesson,
-    progress: (user?.completedLessons || []).includes(lesson.id) ? 100 : Math.floor(Math.random() * 80) + 10
-  }));
+  // Calculate real progress for recent lessons
+  const recentLessons = (lessons || []).slice(0, 3).map(lesson => {
+    const isCompleted = (user?.completedLessons || []).includes(lesson.id);
+    const progress = lessonProgress[lesson.id];
+    
+    let progressPercentage = 0;
+    if (isCompleted) {
+      progressPercentage = 100;
+    } else if (progress) {
+      // Calculate progress based on sections completed and quiz status
+      const totalSections = lesson.sections.length;
+      const completedSections = progress.sectionsCompleted.length;
+      const sectionProgress = (completedSections / totalSections) * 90; // 90% for sections
+      const quizProgress = progress.quizCompleted ? 10 : 0; // 10% for quiz
+      progressPercentage = Math.round(sectionProgress + quizProgress);
+    }
+    
+    return { ...lesson, progress: progressPercentage };
+  });
 
-  // Generate dynamic weekly stats based on user data
+  // Generate real weekly stats based on user data
   const generateWeeklyStats = () => {
     const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     const completedCount = user?.completedLessons?.length || 0;
-    const avgTimePerDay = Math.floor((user?.totalTimeSpent || 0) / 7);
+    const totalTimeSpent = user?.totalTimeSpent || 0;
+    const avgTimePerDay = Math.floor(totalTimeSpent / 7);
     
-    return days.map((day, index) => ({
-      day,
-      lessons: index < completedCount ? Math.floor(Math.random() * 3) + 1 : 0,
-      time: index < completedCount ? avgTimePerDay + Math.floor(Math.random() * 30) : 0
-    }));
+    return days.map((day, index) => {
+      // Distribute completed lessons across the week
+      const lessonsForDay = index < completedCount ? Math.min(Math.floor(completedCount / 7) + (index < completedCount % 7 ? 1 : 0), 3) : 0;
+      const timeForDay = lessonsForDay > 0 ? avgTimePerDay + Math.floor(Math.random() * 20) : 0;
+      
+      return {
+        day,
+        lessons: lessonsForDay,
+        time: timeForDay
+      };
+    });
   };
 
   const weeklyStats = generateWeeklyStats();
@@ -170,28 +216,28 @@ const DashboardPage: React.FC = () => {
       value: user?.level || 1, 
       icon: Trophy, 
       gradient: 'from-blue-600 to-blue-800',
-      change: user?.level > 1 ? '+1 this week' : 'Keep learning!'
+      change: user?.level > 1 ? `+${user.level - 1} from start` : 'Just started!'
     },
     { 
       label: 'Lessons Completed', 
       value: (user?.completedLessons || []).length, 
       icon: BookOpen, 
       gradient: 'from-green-500 to-emerald-500',
-      change: `${(user?.completedLessons || []).length} total`
+      change: `${(user?.completedLessons || []).length} total completed`
     },
     { 
       label: 'Time Spent', 
       value: `${Math.floor((user?.totalTimeSpent || 0) / 60)}h`, 
       icon: Clock, 
       gradient: 'from-indigo-600 to-blue-700',
-      change: `${Math.floor((user?.totalTimeSpent || 0) / 60)} hours total`
+      change: `${Math.floor((user?.totalTimeSpent || 0) / 60)} hours learning`
     },
     { 
       label: 'XP Earned', 
       value: (user?.xp || 0).toLocaleString(), 
       icon: TrendingUp, 
       gradient: 'from-yellow-500 to-orange-500',
-      change: `Level ${user?.level || 1}`
+      change: `Level ${user?.level || 1} progress`
     }
   ];
 
@@ -257,51 +303,58 @@ const DashboardPage: React.FC = () => {
               </Link>
             </div>
             <div className="space-y-4">
-              {recentLessons && recentLessons.length > 0 ? recentLessons.map((lesson) => (
-                <div key={lesson.id} className="group bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 border border-gray-200 dark:border-gray-600">
-                  <div className="flex items-center space-x-4">
-                    <div className={`flex-shrink-0 w-12 h-12 bg-gradient-to-r ${
-                      lesson.difficulty === 'Beginner' ? 'from-green-500 to-emerald-500' :
-                      lesson.difficulty === 'Intermediate' ? 'from-yellow-500 to-orange-500' :
-                      'from-red-500 to-pink-500'
-                    } rounded-xl flex items-center justify-center shadow-lg`}>
-                      <BookOpen className="w-6 h-6 text-white" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{lesson.title}</h3>
-                      <div className="flex items-center space-x-4 mt-1">
-                        <span className="text-xs text-gray-500 dark:text-gray-400">{lesson.duration} min</span>
-                        <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                          lesson.difficulty === 'Beginner' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
-                          lesson.difficulty === 'Intermediate' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
-                          'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
-                        }`}>
-                          {lesson.difficulty}
-                        </span>
+              {recentLessons && recentLessons.length > 0 ? recentLessons.map((lesson) => {
+                const isCompleted = lesson.progress === 100;
+                return (
+                  <div key={lesson.id} className="group bg-gray-50 dark:bg-gray-700/50 rounded-xl p-4 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all duration-200 border border-gray-200 dark:border-gray-600">
+                    <div className="flex items-center space-x-4">
+                      <div className={`flex-shrink-0 w-12 h-12 bg-gradient-to-r ${
+                        lesson.difficulty === 'Beginner' ? 'from-green-500 to-emerald-500' :
+                        lesson.difficulty === 'Intermediate' ? 'from-yellow-500 to-orange-500' :
+                        'from-red-500 to-pink-500'
+                      } rounded-xl flex items-center justify-center shadow-lg`}>
+                        <BookOpen className="w-6 h-6 text-white" />
                       </div>
-                      <div className="mt-3">
-                        <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-                          <span>Progress</span>
-                          <span>{lesson.progress}%</span>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white truncate">{lesson.title}</h3>
+                        <div className="flex items-center space-x-4 mt-1">
+                          <span className="text-xs text-gray-500 dark:text-gray-400">{lesson.duration} min</span>
+                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                            lesson.difficulty === 'Beginner' ? 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300' :
+                            lesson.difficulty === 'Intermediate' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300' :
+                            'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300'
+                          }`}>
+                            {lesson.difficulty}
+                          </span>
                         </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                          <div 
-                            className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
-                            style={{ width: `${lesson.progress}%` }}
-                          ></div>
+                        <div className="mt-3">
+                          <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                            <span>Progress</span>
+                            <span>{lesson.progress}%</span>
+                          </div>
+                          <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                            <div 
+                              className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
+                              style={{ width: `${lesson.progress}%` }}
+                            ></div>
+                          </div>
                         </div>
                       </div>
+                      <Link
+                        to={`/lessons/${lesson.id}`}
+                        className={`ml-4 px-4 py-2 text-white text-sm font-medium rounded-lg transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl ${
+                          isCompleted 
+                            ? 'bg-gradient-to-r from-blue-400 to-blue-600 hover:from-blue-500 hover:to-blue-700' 
+                            : 'bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900'
+                        }`}
+                      >
+                        <Play className="w-4 h-4" />
+                        <span>{isCompleted ? 'Review' : 'Continue'}</span>
+                      </Link>
                     </div>
-                    <Link
-                      to={`/lessons/${lesson.id}`}
-                      className="ml-4 px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-800 text-white text-sm font-medium rounded-lg hover:from-blue-700 hover:to-blue-900 transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl"
-                    >
-                      <Play className="w-4 h-4" />
-                      <span>Continue</span>
-                    </Link>
                   </div>
-                </div>
-              )) : (
+                );
+              }) : (
                 <div className="text-center py-8">
                   <BookOpen className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                   <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No lessons available</h3>

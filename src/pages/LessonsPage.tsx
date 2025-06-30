@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { getAllLessons } from '../services/lessonService';
-import { Lesson } from '../types/lesson';
+import { getAllLessons, getUserLessonProgress } from '../services/lessonService';
+import { Lesson, LessonProgress } from '../types/lesson';
 import { 
   BookOpen, 
   Clock, 
@@ -24,6 +24,7 @@ import {
 const LessonsPage: React.FC = () => {
   const { user, isLoading: authLoading } = useAuth();
   const [lessons, setLessons] = useState<Lesson[]>([]);
+  const [lessonProgress, setLessonProgress] = useState<Record<string, LessonProgress>>({});
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,6 +37,25 @@ const LessonsPage: React.FC = () => {
         setIsLoading(true);
         const lessonsData = await getAllLessons();
         setLessons(lessonsData || []);
+
+        // Fetch progress for all lessons if user is authenticated
+        if (user && lessonsData && lessonsData.length > 0) {
+          const progressPromises = lessonsData.map(async (lesson) => {
+            const progress = await getUserLessonProgress(user.id, lesson.id);
+            return { lessonId: lesson.id, progress };
+          });
+
+          const progressResults = await Promise.all(progressPromises);
+          const progressMap: Record<string, LessonProgress> = {};
+          
+          progressResults.forEach(({ lessonId, progress }) => {
+            if (progress) {
+              progressMap[lessonId] = progress;
+            }
+          });
+
+          setLessonProgress(progressMap);
+        }
       } catch (err) {
         console.error('Error fetching lessons:', err);
         setError('Failed to load lessons');
@@ -47,7 +67,7 @@ const LessonsPage: React.FC = () => {
     if (!authLoading) {
       fetchLessons();
     }
-  }, [authLoading]);
+  }, [authLoading, user]);
 
   if (authLoading || isLoading) {
     return (
@@ -121,7 +141,7 @@ const LessonsPage: React.FC = () => {
     switch (category) {
       case 'Building': return 'from-orange-500 to-red-500';
       case 'Programming': return 'from-blue-600 to-blue-800';
-      case 'CAD': return 'from-purple-500 to-indigo-600';
+      case 'CAD': return 'from-indigo-500 to-blue-600';
       case 'Notebook': return 'from-green-500 to-emerald-600';
       default: return 'from-gray-500 to-gray-700';
     }
@@ -138,6 +158,25 @@ const LessonsPage: React.FC = () => {
     acc[category].push(lesson);
     return acc;
   }, {} as Record<string, Lesson[]>);
+
+  // Calculate lesson progress percentage
+  const getLessonProgress = (lesson: Lesson) => {
+    const isCompleted = userCompletedLessons.includes(lesson.id);
+    const progress = lessonProgress[lesson.id];
+    
+    if (isCompleted) {
+      return 100;
+    } else if (progress) {
+      // Calculate progress based on sections completed and quiz status
+      const totalSections = lesson.sections.length;
+      const completedSections = progress.sectionsCompleted.length;
+      const sectionProgress = (completedSections / totalSections) * 90; // 90% for sections
+      const quizProgress = progress.quizCompleted ? 10 : 0; // 10% for quiz
+      return Math.round(sectionProgress + quizProgress);
+    }
+    
+    return 0;
+  };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -273,6 +312,7 @@ const LessonsPage: React.FC = () => {
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               {categoryLessons.map((lesson) => {
                 const isCompleted = userCompletedLessons.includes(lesson.id);
+                const progressPercentage = getLessonProgress(lesson);
                 const isLocked = false; // For now, no lessons are locked
                 
                 return (
@@ -325,12 +365,26 @@ const LessonsPage: React.FC = () => {
                           <Trophy className="w-4 h-4" />
                           <span>+{lesson.xpReward || 0} XP</span>
                         </div>
+                        <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                          <span>Progress</span>
+                          <span>{progressPercentage}%</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                          <div 
+                            className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
+                            style={{ width: `${progressPercentage}%` }}
+                          ></div>
+                        </div>
                       </div>
 
                       {!isLocked ? (
                         <Link
                           to={`/lessons/${lesson.id}`}
-                          className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                          className={`w-full text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
+                            isCompleted 
+                              ? 'bg-gradient-to-r from-blue-400 to-blue-600 hover:from-blue-500 hover:to-blue-700' 
+                              : 'bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900'
+                          }`}
                         >
                           <Play className="w-4 h-4" />
                           <span>{isCompleted ? 'Review' : 'Start Lesson'}</span>
@@ -355,6 +409,7 @@ const LessonsPage: React.FC = () => {
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredLessons.map((lesson) => {
             const isCompleted = userCompletedLessons.includes(lesson.id);
+            const progressPercentage = getLessonProgress(lesson);
             const isLocked = false;
             
             return (
@@ -407,12 +462,26 @@ const LessonsPage: React.FC = () => {
                       <Trophy className="w-4 h-4" />
                       <span>+{lesson.xpReward || 0} XP</span>
                     </div>
+                    <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                      <span>Progress</span>
+                      <span>{progressPercentage}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
+                      <div 
+                        className="bg-gradient-to-r from-blue-600 to-blue-800 h-2 rounded-full transition-all duration-500" 
+                        style={{ width: `${progressPercentage}%` }}
+                      ></div>
+                    </div>
                   </div>
 
                   {!isLocked ? (
                     <Link
                       to={`/lessons/${lesson.id}`}
-                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                      className={`w-full text-white py-2 px-4 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2 ${
+                        isCompleted 
+                          ? 'bg-gradient-to-r from-blue-400 to-blue-600 hover:from-blue-500 hover:to-blue-700' 
+                          : 'bg-gradient-to-r from-blue-600 to-blue-800 hover:from-blue-700 hover:to-blue-900'
+                      }`}
                     >
                       <Play className="w-4 h-4" />
                       <span>{isCompleted ? 'Review' : 'Start Lesson'}</span>
