@@ -10,7 +10,6 @@ import LessonsPage from './pages/LessonsPage';
 import LessonViewPage from './pages/LessonViewPage';
 import TeamsPage from './pages/TeamsPage';
 import ProfilePage from './pages/ProfilePage';
-import CaptainDashboard from './pages/CaptainDashboard';
 import { Loader2 } from 'lucide-react';
 
 // Loading component
@@ -92,7 +91,6 @@ const AppContent: React.FC = () => {
         <Route path="/lessons/:id" element={<LessonViewPage />} />
         <Route path="/teams" element={<TeamsPage />} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/captain" element={<CaptainDashboard />} />
       </Routes>
     </div>
   );

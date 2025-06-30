@@ -7,7 +7,8 @@ import {
   where, 
   getDocs,
   orderBy,
-  limit
+  limit,
+  serverTimestamp
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { User } from '../types/user';
@@ -49,7 +50,7 @@ export const updateUser = async (userId: string, updates: Partial<User>): Promis
     // Remove any Date objects and convert them to Firestore timestamps
     const updateData = {
       ...updates,
-      updatedAt: new Date()
+      updatedAt: serverTimestamp()
     };
     
     // Remove undefined values
@@ -98,8 +99,8 @@ export const updateUserProgress = async (
         level: newLevel,
         completedLessons,
         totalTimeSpent: currentTimeSpent + timeSpent,
-        lastActive: new Date(),
-        updatedAt: new Date()
+        lastActive: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
       
       console.log('User progress updated successfully');
@@ -178,5 +179,19 @@ export const getTopUsers = async (limitCount: number = 10): Promise<User[]> => {
   } catch (error) {
     console.error('Error getting top users:', error);
     return [];
+  }
+};
+
+// Automatically promote first team member to captain
+export const promoteToTeamCaptain = async (userId: string): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'users', userId), {
+      role: 'captain',
+      updatedAt: serverTimestamp()
+    });
+    console.log('User promoted to team captain:', userId);
+  } catch (error) {
+    console.error('Error promoting user to captain:', error);
+    throw new Error('Failed to promote user to captain');
   }
 };

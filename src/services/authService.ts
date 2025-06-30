@@ -4,9 +4,10 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../config/firebase';
 import { User } from '../types/user';
+import { promoteToTeamCaptain } from './userService';
 
 export const signInWithGoogle = async (): Promise<User | null> => {
   try {
@@ -43,7 +44,7 @@ export const signInWithGoogle = async (): Promise<User | null> => {
           name: firebaseUser.displayName || 'Anonymous User',
           email: firebaseUser.email || '',
           avatar: firebaseUser.photoURL || `https://ui-avatars.com/api/?name=${encodeURIComponent(firebaseUser.displayName || 'User')}&background=3b82f6&color=fff`,
-          role: 'student',
+          role: 'student', // Default role, can be promoted to captain when creating/joining team
           level: 1,
           xp: 0,
           teamId: null,
@@ -58,17 +59,17 @@ export const signInWithGoogle = async (): Promise<User | null> => {
         // Save to Firestore
         await setDoc(userDocRef, {
           ...userData,
-          createdAt: userData.createdAt,
-          lastActive: userData.lastActive,
-          updatedAt: new Date()
+          createdAt: serverTimestamp(),
+          lastActive: serverTimestamp(),
+          updatedAt: serverTimestamp()
         });
         console.log('New user profile created');
       }
       
       // Update last active
       await updateDoc(userDocRef, {
-        lastActive: new Date(),
-        updatedAt: new Date()
+        lastActive: serverTimestamp(),
+        updatedAt: serverTimestamp()
       });
       
       console.log('User data ready:', userData.name);
