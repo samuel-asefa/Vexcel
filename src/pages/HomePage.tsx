@@ -92,7 +92,7 @@ const HomePage: React.FC = () => {
             <div className="flex justify-center mb-8">
               <div className="w-20 h-20 rounded-2xl flex items-center justify-center shadow-2xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700">
                 <img 
-                  src="/image copy.png" 
+                  src="../../dist/assets/favicon.png" 
                   alt="Vexcel Logo" 
                   className="w-12 h-12 object-contain"
                 />
